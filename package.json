@@ -13,6 +13,7 @@
     "@types/pg": "^8.11.6",
     "@types/react": "^18.3.3",
     "drizzle-kit": "^0.24.0",
+    "eslint": "^9.13.0",
     "prisma": "^5.20.0",
     "typescript": "5.5.4"
   },
