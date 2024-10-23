@@ -1,6 +1,6 @@
 "use client"
 
-import { signIn } from "../lib/auth"
+import { signIn } from "../../lib/auth"
  
 export function SignIn() {
   return (

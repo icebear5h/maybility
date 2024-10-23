@@ -1,6 +1,6 @@
 "use client"
 
-import { signOut } from "../lib/auth"
+import { signOut } from "../../lib/auth"
  
 export function SignOut() {
   return (
