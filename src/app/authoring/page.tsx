@@ -1,6 +1,6 @@
 "use client";
 
-import Journal from "../../../components/Journal";
+import Journal from "../../../components/authoring/Journal";
 import { Spacer, Link, Button, Input, Divider } from "@nextui-org/react";
 import React, { useState, useEffect } from 'react';
 
