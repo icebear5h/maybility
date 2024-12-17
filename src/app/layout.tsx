@@ -26,6 +26,5 @@ export default function RootLayout({
           </body>
       </html>
     </SessionWrapper>
-    
   );
 }

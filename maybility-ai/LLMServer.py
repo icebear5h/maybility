@@ -8,10 +8,8 @@ from supabase import create_client, Client
 from openai import OpenAI
 from prisma import Prisma
 from groq import Groq
-import asyncio
-import supabase
-import logging
-import ast
+from fastapi.middleware.cors import CORSMiddleware
+
 import time
 load_dotenv()
 
@@ -29,28 +27,35 @@ th.set_metadata('timezone', -4)
 
 #MODEL = "llama3-groq-70b-8192-tool-use-preview"
 
-async def getConversation(userId, conversationId):
+async def getMessages(userId, conversationId):
     db = Prisma ()
     await db.connect()
+    messages = []
     conversation = await db.conversation.find_first_or_raise(
         where={
             'id': conversationId,
-            'userId': userId
+            'userId': userId,
         },
+        include={
+            'messages': True
+        }
     )
+    for msg in conversation.messages:
+        messages.append({"role": msg.role, "content": msg.content})
     await db.disconnect()
-    return conversation
+    return messages
 
-async def updateConversation(conversation, userId, conversationId):
+async def updateMessages(newMessage, conversationId):
     db = Prisma ()
     await db.connect()
     conversation = await db.conversation.update(
         where={
-            'id': conversationId,
-            'userId': userId
+            'id': conversationId
         },
         data={
-            'messages': conversation
+            'messages':{
+                'create': newMessage
+            }
         }
     )
     await db.disconnect()
@@ -101,11 +106,25 @@ async def getDocContext(docIds):
         )
         context += doc.content
     await db.disconnect()
+    if (context != ""):
+        context = "\n\n The following is the relevant user's journal contents: " + context
     return context
 #print(th.get_tools())
 
 # Initialize FastAPI client
 app = FastAPI()
+
+origins = [
+    "http://localhost:3000",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 class ChatRequest (BaseModel):
     input_str: str
@@ -118,66 +137,64 @@ async def chat_with_assistant(input_str, userId, conversationId):
     docIds = await retrieveDocs(input_str, userId)
     print("Embedding query and retrieving docIds: " + str(time.time()-start_time))
     userDocContext = await getDocContext(docIds)
-    conversation = await getConversation(userId, conversationId)
+    messages = await getMessages(userId, conversationId)
     print("Retrieving doc contents: " + str(time.time()-start_time))
-
-    # Append the user input to the chat history
-    newMessage = [{
-        "role": "user",
-        "content": "This is the user's key query: " + input_str +  "\n\n The following is the user's journal contents:" + userDocContext
-    }]
     
-    conversation.append(newMessage)
+    # Append the user input to the chat history
+    promptFormated = [{
+        "role": "user",
+        "content": "This is the user's key query: " + input_str + "| end of query \n\n" + userDocContext
+    }]
+    messages += promptFormated
+    print(messages)
     # Create the response
     response = client.chat.completions.create(
         model=MODEL,
-        messages=conversation,
+        messages=messages,
         tools=th.get_tools(),
         temperature=1.2
     )
     print("Initial feed??: " + str(time.time()-start_time))
 
     tool_run = th.run_tools(response)
-    conversation.extend(tool_run)
+    promptFormated.extend(tool_run)
     print("With tools: " + str(time.time()-start_time))
 
     response = client.chat.completions.create(
         model=MODEL,
-        messages=conversation,
+        messages=messages + promptFormated,
         tools=th.get_tools(),
         temperature=1.2
     )
     # Append the response to the chat history
-    conversation.append({
+    newMessage = {
         "role": "assistant",
         "content": response.choices[0].message.content
-    })
+    }
     print("Final: " + str(time.time()-start_time))
-
-    updateConversation(conversation, userId, conversationId)
-
     #print(messages)
     # Print the assistant's response
+    await updateMessages(newMessage, conversationId)
     return (response.choices[0].message.content)
 
 #print(chat_with_assistant("what is going on with the news right now"))
 
-@app.post("/chat/")  # This line decorates 'translate' as a POST endpoint
+@app.post("/chatbot/chat")  # This line decorates 'translate' as a POST endpoint
 async def chat(request: ChatRequest):
     try:
         # Call your translation function
-        assistant_text = chat_with_assistant(request.input_str, request.userId, request.conversationId)
-        return {"assistant_text": assistant_text}
+        messages = chat_with_assistant(request.userMessage, request.userId, request.conversationId)
+        return messages
     except Exception as e:
         # Handle exceptions or errors during translation
         raise HTTPException(status_code=500, detail=str(e))
     
     
-async def main() -> None:
-    print(await retrieveDocs("My plans for the year", "cm2m5o20w0000swrdjcfxy2m3"))
-    #print (await chat_with_assistant("What is on the news for october 21 2024", "cm1i7065600003kw4l6b3ds0q", ))
-    #print(await retrieveDocs("goals for the semester"))
+# async def main() -> None:
+#     print(await chat_with_assistant("You are my assistant, give me suggestions on what to do with my free time","cm2mlwyix0009z10nyifr74r3","cm2mlzv2p0000dr4eavgoc3tz"))
+#     #print (await chat_with_assistant("What is on the news for october 21 2024", "cm1i7065600003kw4l6b3ds0q", ))
+#     #print(await retrieveDocs("goals for the semester"))
     
     
-if __name__ == "__main__":
-    asyncio.run(main())
+# if __name__ == "__main__":
+#     asyncio.run(main())

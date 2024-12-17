@@ -1,11 +1,22 @@
 import React from "react";
 import {Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Avatar} from "@nextui-org/react";
 import { useSession, signOut } from "next-auth/react";
+import { redirect } from "next/dist/server/api-utils";
 
 
 export default function AccountDropdown() {
     const { data: session } = useSession();
     const userImage = session?.user?.image || "../images/defaultuser";
+
+    const handleAction = (key: string) => {
+        switch (key) {
+          case "logout":
+            signOut();
+            break;
+          default:
+            console.warn("Unknown action:", key);
+        }
+    };
 
     return (
         <div className="flex items-center gap-4 ">
@@ -18,7 +29,11 @@ export default function AccountDropdown() {
                         src={userImage}
                     />
                 </DropdownTrigger>
-                <DropdownMenu aria-label="Profile Actions" variant="flat">
+                <DropdownMenu 
+                    aria-label="Profile Actions" 
+                    variant="flat"
+                    onAction={key => handleAction(key)}
+                >
                     <DropdownItem key="profile" className="h-14 gap-2">
                         <p className="font-semibold">Signed in as</p>
                         <p className="font-semibold">{session?.user?.email}</p>

@@ -8,7 +8,7 @@ import AccountDropdown from "./AccountDropdown";
 
 export default function App() {
   const {data: session} = useSession();
-
+  // console.log(session);
   return (
     <Navbar position="static">
       <NavbarBrand >
