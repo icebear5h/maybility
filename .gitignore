@@ -6,3 +6,5 @@ node_modules/
 maybility-ai/.env
 maybility-ai/old_stuff/
 maybility-ai/node_modules/
+maybility-ai/token.json
+maybility-ai/credentials.json
