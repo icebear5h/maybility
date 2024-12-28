@@ -3,6 +3,20 @@ import json
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 import os.path
+import pdb
+import logging
+import traceback
+from functools import wraps
+
+# Set up logging with more detailed format
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s - [%(filename)s:%(lineno)d]',
+    handlers=[
+        logging.StreamHandler()  # Only console output for immediate feedback
+    ]
+)
+logger = logging.getLogger(__name__)
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -49,37 +63,76 @@ GENERAL_MODEL = "llama3-70b-8192"
 
 relevant_fields = ["start", "end", "summary", "description"]
 
+def trace(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        func_name = func.__name__
+        logger.debug(f"ENTER {func_name} - Args: {args}, Kwargs: {kwargs}")
+        try:
+            result = func(*args, **kwargs)
+            logger.debug(f"EXIT {func_name} - Result: {str(result)[:200]}...")
+            return result
+        except Exception as e:
+            logger.error(f"ERROR in {func_name}: {str(e)}\n{traceback.format_exc()}")
+            raise
+    return wrapper
+
+@trace
 def calendar(start_time, end_time):
     """Tool to get calendar events"""
-    print("checking between " + start_time + " and " + end_time)
+    logger.debug(f"Calendar function called with start_time={start_time}, end_time={end_time}")
+    
     try:
         service = build("calendar", "v3", credentials=creds)
+        logger.debug("Calendar service built successfully")
+        
         calendar_list = service.calendarList().list().execute()
+        logger.debug(f"Retrieved calendar list with {len(calendar_list.get('items', []))} calendars")
+        
         events = []
         # Call the Calendar API
-        print("Getting the upcoming 10 events")
+        logger.info("Getting events for each calendar")
         for calendar in calendar_list.get("items", []):  # Loop through calendars
             calendar_id = calendar["id"]
-            print(f"Fetching events for calendar: {calendar["summary"]}")
+            logger.debug(f"Processing calendar: {calendar['summary']} (ID: {calendar_id})")
             
             # Fetch events for this calendar
-            events_result = service.events().list(
-                calendarId=calendar_id,
-                timeMin=start_time,
-                timeMax=end_time,
-                singleEvents=True,
-                orderBy="startTime",
-            ).execute()
-            filtered_events = [{key: item[key] for key in relevant_fields if key in item} for item in events_result.get("items", [])]
-            events += ["This is the name of the calendar: " + calendar["summary"] + " and the description" + calendar["summary"], filtered_events]
-        print(events)
+            try:
+                events_result = service.events().list(
+                    calendarId=calendar_id,
+                    timeMin=start_time,
+                    timeMax=end_time,
+                    singleEvents=True,
+                    orderBy="startTime",
+                ).execute()
+                logger.debug(f"Retrieved {len(events_result.get('items', []))} events")
+                
+                filtered_events = [{key: item[key] for key in relevant_fields if key in item} 
+                                for item in events_result.get("items", [])]
+                events.append({
+                    "calendar_name": calendar["summary"],
+                    "events": filtered_events
+                })
+                logger.debug(f"Processed {len(filtered_events)} filtered events")
+            
+            except Exception as e:
+                logger.error(f"Error processing calendar {calendar['summary']}: {str(e)}")
+                events.append({
+                    "calendar_name": calendar["summary"],
+                    "error": str(e)
+                })
 
+        logger.debug(f"Returning {len(events)} calendar results")
         return json.dumps({"result": events})
-    except:
-        return json.dumps({"error": "Invalid expression"})
+    except Exception as e:
+        logger.error(f"Error in calendar function: {str(e)}", exc_info=True)
+        return json.dumps({"error": str(e)})
 
+@trace
 def route_query(query):
     """Routing logic to let LLM decide if tools are needed"""
+    logger.debug(f"route_query called with query: {query}")
+    
     routing_prompt = f"""
     Given the following user query, determine if any tools are needed to answer it.
     If a calendar tool is needed, respond with 'TOOL: CALENDAR'.
@@ -106,9 +159,14 @@ def route_query(query):
     else:
         return "no tool needed"
 
+@trace
 def run_with_tool(query):
     """Use the tool use model to perform retrieval of events"""
+    logger.debug(f"run_with_tool called with query: {query}")
+    
     now = datetime.utcnow().isoformat() + "Z"
+    logger.debug(f"Current time: {now}")
+    
     messages = [
         {
             "role": "system",
@@ -119,60 +177,60 @@ def run_with_tool(query):
             "content": query,
         }
     ]
-    local_tools = [
-        {
-            "type": "function",
-            "function": {
-                "name": "calendar",
-                "description": "get events of the user's calendar",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "start_time": {
-                            "type": "string",
-                            "description": "The start of the window where the retrieved events will fall between",
-                        },
-                        "end_time": {
-                            "type": "string",
-                            "description": "The end of the window where the retrieved events will fall between"
-                        }
-                    },
-                    "required": ["start_time", "end_time"],
-                },
-            },
-        }
-    ]
-    response = client.chat.completions.create(
-        model=TOOL_USE_MODEL,
-        messages=messages,
-        tools=local_tools,
-        tool_choice="auto",
-        max_tokens=4096
-    )
-    response_message = response.choices[0].message
-    tool_calls = response_message.tool_calls
-    if tool_calls:
-        messages.append(response_message)
-        for tool_call in tool_calls:
-            function_args = json.loads(tool_call.function.arguments)
-            function_response = calendar(function_args.get("start_time"), function_args.get("end_time"))
-            messages.append(
-                {
-                    "tool_call_id": tool_call.id,
-                    "role": "tool",
-                    "name": "calendar",
-                    "content": function_response,
-                }
-            )
-        second_response = client.chat.completions.create(
+    logger.debug("Prepared messages for model")
+    
+    try:
+        response = client.chat.completions.create(
             model=TOOL_USE_MODEL,
-            messages=messages
+            messages=messages,
+            tools=local_tools,
+            tool_choice="auto",
+            max_tokens=4096
         )
-        return second_response.choices[0].message.content
-    return response_message.content
+        logger.debug("Received initial model response")
+        
+        response_message = response.choices[0].message
+        tool_calls = response_message.tool_calls
+        
+        if tool_calls:
+            logger.debug(f"Model requested {len(tool_calls)} tool calls")
+            messages.append(response_message)
+            
+            for tool_call in tool_calls:
+                function_args = json.loads(tool_call.function.arguments)
+                logger.debug(f"Executing tool call with args: {function_args}")
+                
+                function_response = calendar(function_args.get("start_time"), function_args.get("end_time"))
+                logger.debug(f"Received function response: {function_response[:100]}...")
+                
+                messages.append(
+                    {
+                        "tool_call_id": tool_call.id,
+                        "role": "tool",
+                        "name": "calendar",
+                        "content": function_response,
+                    }
+                )
+            
+            logger.debug("Making second model call")
+            second_response = client.chat.completions.create(
+                model=TOOL_USE_MODEL,
+                messages=messages
+            )
+            return second_response.choices[0].message.content
+            
+        logger.debug("No tool calls requested by model")
+        return response_message.content
+        
+    except Exception as e:
+        logger.error(f"Error in run_with_tool: {str(e)}", exc_info=True)
+        raise
 
+@trace
 def run_general(query):
     """Use the general model to answer the query since no tool is needed"""
+    logger.debug(f"run_general called with query: {query}")
+    
     response = client.chat.completions.create(
         model=GENERAL_MODEL,
         messages=[
@@ -180,15 +238,22 @@ def run_general(query):
             {"role": "user", "content": query}
         ]
     )
+    logger.debug("Received general model response")
+    
     return response.choices[0].message.content
 
+@trace
 def process_query(query):
     """Process the query and route it to the appropriate model"""
+    logger.debug(f"process_query called with query: {query}")
+    
     route = route_query(query)
     if route == "calendar":
         response = run_with_tool(query)
     else:
         response = run_general(query)
+    
+    logger.debug(f"Returning response: {response[:100]}...")
     
     return {
         "query": query,
