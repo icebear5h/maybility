@@ -1,26 +1,337 @@
-@import "tailwindcss";
-
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: #fafafa;
+  color: #333;
+  line-height: 1.6;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: Georgia, serif;
+  margin-bottom: 0.5rem;
+  color: #1a1a1a;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.card {
+  background: white;
+  border-radius: 4px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  margin-bottom: 20px;
+  border: 1px solid #e0e0e0;
+}
+
+.btn {
+  padding: 10px 20px;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  display: inline-block;
+  text-align: center;
+  transition: all 0.2s;
+  background: white;
+  color: #333;
+}
+
+.btn:hover {
+  background-color: #f5f5f5;
+  border-color: #999;
+}
+
+.btn-primary {
+  background-color: #333;
+  color: white;
+  border-color: #333;
+}
+
+.btn-primary:hover {
+  background-color: #555;
+  border-color: #555;
+}
+
+.navbar {
+  background: white;
+  border-bottom: 1px solid #e0e0e0;
+  padding: 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.navbar-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  height: 60px;
+}
+
+.navbar-brand {
+  font-size: 1.25rem;
+  font-weight: bold;
+  color: #1a1a1a;
+  text-decoration: none;
+}
+
+.navbar-nav {
+  display: flex;
+  list-style: none;
+  gap: 0;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  padding: 20px 24px;
+  text-decoration: none;
+  color: #666;
+  transition: all 0.2s;
+  border-bottom: 2px solid transparent;
+}
+
+.nav-item:hover {
+  color: #333;
+  background-color: #f8f8f8;
+}
+
+.nav-item.active {
+  color: #333;
+  border-bottom-color: #333;
+  font-weight: 500;
+}
+
+.main-content {
+  min-height: calc(100vh - 60px);
+  padding: 40px 20px;
+}
+
+.chatbot {
+  width: 280px;
+  background: white;
+  border-left: 1px solid #e0e0e0;
+  height: calc(100vh - 60px);
+  padding: 20px;
+  position: fixed;
+  right: 0;
+  top: 60px;
+}
+
+.editor-toolbar {
+  background: #f8f8f8;
+  border-bottom: 1px solid #e0e0e0;
+  padding: 12px;
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.toolbar-btn {
+  padding: 6px 10px;
+  border: 1px solid #d0d0d0;
+  background: white;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #333;
+}
+
+.toolbar-btn:hover {
+  background: #f0f0f0;
+}
+
+.toolbar-btn.active {
+  background: #333;
+  color: white;
+  border-color: #333;
+}
+
+.editor-content {
+  min-height: 500px;
+  padding: 24px;
+  background: white;
+}
+
+.ProseMirror {
+  outline: none;
+  min-height: 500px;
+}
+
+.ProseMirror h1 { font-size: 2rem; margin: 1rem 0; }
+.ProseMirror h2 { font-size: 1.5rem; margin: 1rem 0; }
+.ProseMirror h3 { font-size: 1.25rem; margin: 1rem 0; }
+.ProseMirror p { margin: 0.5rem 0; }
+.ProseMirror ul, .ProseMirror ol { margin: 1rem 0; padding-left: 2rem; }
+.ProseMirror li { margin: 0.25rem 0; }
+.ProseMirror blockquote {
+  border-left: 3px solid #ccc;
+  padding-left: 1rem;
+  margin: 1rem 0;
+  font-style: italic;
+  background: #f9f9f9;
+  padding: 1rem;
+  color: #666;
+}
+.ProseMirror pre {
+  background: #f5f5f5;
+  color: #333;
+  padding: 1rem;
+  border-radius: 3px;
+  margin: 1rem 0;
+  overflow-x: auto;
+  border: 1px solid #e0e0e0;
+}
+.ProseMirror table {
+  border-collapse: collapse;
+  margin: 1rem 0;
+  width: 100%;
+}
+.ProseMirror th, .ProseMirror td {
+  border: 1px solid #d0d0d0;
+  padding: 8px 12px;
+}
+.ProseMirror th {
+  background: #f8f8f8;
+  font-weight: 600;
+}
+
+/* Calendar Styles */
+.calendar-container {
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+}
+
+.calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e0e0e0;
+  background: #f8f8f8;
+}
+
+.calendar-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+}
+
+.calendar-day-header {
+  padding: 12px 8px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #666;
+  background: #f8f8f8;
+  border-bottom: 1px solid #e0e0e0;
+  border-right: 1px solid #e0e0e0;
+}
+
+.calendar-day-header:last-child {
+  border-right: none;
+}
+
+.calendar-day {
+  min-height: 120px;
+  padding: 8px;
+  border-bottom: 1px solid #e0e0e0;
+  border-right: 1px solid #e0e0e0;
+  position: relative;
+  background: white;
+}
+
+.calendar-day:last-child {
+  border-right: none;
+}
+
+.calendar-day.other-month {
+  background: #fafafa;
+  color: #999;
+}
+
+.calendar-day.today {
+  background: #f0f0f0;
+}
+
+.calendar-day.drag-over {
+  background: #e8f4f8;
+}
+
+.day-number {
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.calendar-event {
+  background: #333;
+  color: white;
+  padding: 4px 8px;
+  margin: 2px 0;
+  border-radius: 3px;
+  font-size: 12px;
+  cursor: grab;
+  user-select: none;
+}
+
+.calendar-event:active {
+  cursor: grabbing;
+}
+
+.calendar-event.dragging {
+  opacity: 0.5;
+}
+
+.calendar-event.green { background: #4a5d23; }
+.calendar-event.blue { background: #1e3a8a; }
+.calendar-event.red { background: #7f1d1d; }
+
+.context-menu {
+  position: fixed;
+  background: white;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  z-index: 1000;
+  min-width: 150px;
+}
+
+.context-menu-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 14px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.context-menu-item:hover {
+  background: #f5f5f5;
+}
+
+.context-menu-item:last-child {
+  border-bottom: none;
+}
+
+.context-menu-item.danger {
+  color: #dc2626;
 }
