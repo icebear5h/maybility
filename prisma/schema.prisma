@@ -1,0 +1,265 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  accounts      Account[]
+  sessions      Session[]
+  journalEntries JournalEntry[]
+  folders       Folder[]
+  tasks         Task[]
+  updates       Update[]
+  goals         Goal[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verificationtokens")
+}
+
+model Folder {
+  id        String   @id @default(cuid())
+  name      String
+  parentId  String?  // null for root folders
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  isRoot    Boolean @default(false)
+
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent       Folder?  @relation("FolderHierarchy", fields: [parentId], references: [id])
+  children     Folder[] @relation("FolderHierarchy")
+  entries      JournalEntry[]
+
+  @@index([userId])
+  @@index([parentId])
+  @@index([userId, parentId])
+  @@unique([userId, parentId, name])
+
+  @@map("folders")
+}
+
+model JournalEntry {
+  id        String   @id @default(cuid())
+  title     String
+  content   String   @db.Text
+  folderId  String
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder Folder        @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  @@map("journal_entries")
+  @@index([userId])
+  @@index([folderId])
+  @@index([userId, folderId]) 
+}
+
+model Task {
+  id                String     @id @default(cuid())
+  title             String
+  description       String?
+
+  // Status and completion
+  status            TaskStatus @default(TODO)
+  priority          Priority   @default(MEDIUM)
+
+  // Non-recurring (single) scheduling (still useful for the "master" too)
+  dueDate           DateTime?
+  scheduledDate     DateTime?  // date anchor in local TZ
+  startTime         String?    // "HH:MM"
+  endTime           String?    // "HH:MM"
+  estimatedDuration Int?       // minutes
+
+  // Recurrence (RFC5545-like)
+  rrule             String?    // e.g. "FREQ=WEEKLY;BYDAY=MO,WE,FR"
+  dtstart           DateTime?  // UTC start for the series
+  timezone          String      @default("America/Los_Angeles") // IANA tz for expansion
+
+  // Visual
+  color             String      @default("#3b82f6")
+
+  // Metadata
+  userId            String
+  goalId            String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal    Goal?    @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  updates Update[]
+
+  // Recurrence children
+  exceptions TaskException[]
+  rdates     TaskRDate[]
+  overrides  TaskOverride[]
+
+  @@index([userId, dtstart])
+  @@index([userId, scheduledDate])
+  @@map("tasks")
+}
+
+/// Explicitly SKIP a generated occurrence (EXDATE) or ADD an extra explicit date (when canceled=false use TaskRDate)
+model TaskException {
+  id               String   @id @default(cuid())
+  taskId           String
+  occurrenceStart  DateTime // UTC: the original instance start (before any move)
+  occurrenceEnd    DateTime
+  canceled         Boolean  @default(true)
+
+  task             Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, occurrenceStart]) // one edit per occurrence
+  @@index([occurrenceStart])
+}
+
+/// Explicitly ADD an instance date (RDATE) not covered by the RRULE
+model TaskRDate {
+  id               String   @id @default(cuid())
+  taskId           String
+  occurrenceStart  DateTime // UTC start for the added occurrence
+  occurrenceEnd    DateTime
+
+  task             Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, occurrenceStart])
+  @@index([occurrenceStart])
+}
+
+/// Patch fields for a single occurrence (move time, change title, etc.)
+/// If a field is null, fall back to the Task's base value.
+model TaskOverride {
+  id                String      @id @default(cuid())
+  taskId            String
+  occurrenceStart   DateTime    // UTC: key of the generated occurrence this override targets
+
+  // Overridable fields (all optional; use as partial patch)
+  title             String?
+  description       String?
+  status            TaskStatus?
+  color             String?
+
+  // You can EITHER provide a moved absolute start/end OR keep date + startTime/endTime style:
+  newStart          DateTime?   // absolute UTC start for this instance (moved)
+  newEnd            DateTime?   // absolute UTC end for this instance (moved)
+
+  // Or light-weight adjustments:
+  newScheduledDate  DateTime?   // local day for this instance
+  newStartTime      String?     // "HH:MM"
+  newEndTime        String?     // "HH:MM"
+  newEstimatedDuration Int?
+
+  task              Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, occurrenceStart]) // one override per occurrence
+  @@index([occurrenceStart])
+}
+
+model Goal {
+  id               String    @id @default(cuid())
+  title            String
+  description      String?
+  targetDate       DateTime?
+  definitionOfDone String?
+  color            String?
+  archived         Boolean   @default(false)
+  userId           String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks          Task[]          
+  updates        Update[]
+
+
+  @@map("goals")
+}
+
+
+
+model Update {
+  id        String     @id @default(cuid())
+  taskId    String?    // Optional - can be standalone updates
+  goalId    String?    // Optional - can be standalone updates
+  kind      UpdateKind
+  body      String
+  userId    String
+  createdAt DateTime   @default(now())
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task Task? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  goal Goal? @relation(fields: [goalId], references: [id], onDelete: SetNull)
+
+  @@map("updates")
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+enum UpdateKind {
+  TASK_COMPLETION
+  REFLECTION
+  MILESTONE
+}
