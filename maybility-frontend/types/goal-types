@@ -1,0 +1,6 @@
+import { Goal, Task, Update } from "@prisma/client"
+
+export type GoalWithDetails = Goal & {
+  tasks: Task[]
+  updates: Update[]
+}
