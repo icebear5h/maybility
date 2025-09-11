@@ -1,27 +1,42 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# --- deps ---
+**/node_modules/
+# catch accidental typo folder
+**/node_module/
 
-# dependencies
-/node_modules
+# --- Next.js outputs ---
+**/.next/
+**/out/
 
-# next.js
-/.next/
-/out/
+# --- builds / bundles ---
+**/build/
+**/dist/
+**/.turbo/
+**/.cache/
+**/.parcel-cache/
 
-# production
-/build
+# --- logs ---
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+**/.pnpm-debug.log*
+**/pnpm-debug.log*
 
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-.pnpm-debug.log*
+# --- env files ---
+**/.env
+**/.env.*
+!**/.env.example          # keep example envs in repo
 
-# env files
-.env*
+# --- Vercel / deployment ---
+**/.vercel/
 
-# vercel
-.vercel
+# --- TypeScript ---
+**/*.tsbuildinfo
+**/next-env.d.ts
 
-# typescript
-*.tsbuildinfo
-next-env.d.ts
+# --- OS/Editor junk ---
+.DS_Store
+Thumbs.db
+**/.idea/
+# If you want to keep recommended VS Code settings, remove the next line
+**/.vscode/
+git 
