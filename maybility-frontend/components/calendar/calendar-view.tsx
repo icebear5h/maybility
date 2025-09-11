@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { DndContext, DragOverlay } from "@dnd-kit/core"
+import { DndContext, DragOverlay, useDndMonitor } from "@dnd-kit/core"
 import { TaskSidebar } from "@/components/calendar/task-sidebar"
 import { WeekAndDayView } from "@/components/calendar/day-based/week-and-day-view"
 import { MonthView } from "@/components/calendar/months/month-view"
@@ -289,7 +289,7 @@ export default function CalendarView() {
 
   // Enhanced event click handler that respects drag state
   const handleEventClick = (event: Occurrence) => {
-    if (dragHandlers.hasDragged) {
+    if (dragHandlers.dragState.eventId) {
       return
     }
     calendarState.handleEventClick(event)
@@ -302,15 +302,12 @@ export default function CalendarView() {
       events: calendarState.events,
       dragState: dragHandlers.dragState,
       onEventClick: handleEventClick,
-      onMouseDown: dragHandlers.handleMouseDown,
       containerRefs,
-      dragOverDate: dragHandlers.dragOverDate,
-      hasDragged: dragHandlers.hasDragged,
     }
 
     switch (calendarState.view) {
       case "month":
-        return <MonthView {...commonProps} onTimeSlotClick={calendarState.handleTimeSlotClick} hasDragged={dragHandlers.hasDragged} />
+        return <MonthView {...commonProps} onTimeSlotClick={calendarState.handleTimeSlotClick} />
       case "week":
         return <WeekAndDayView {...commonProps} view={calendarState.view as "week" | "day"} onTimeSlotClick={calendarState.handleTimeSlotClick} />
       case "day":
@@ -348,9 +345,10 @@ export default function CalendarView() {
   }
 
   return (
-    <DndContext 
-      onDragStart={dragHandlers.handleDragStart} 
-      onDragEnd={dragHandlers.handleDragEnd}
+    <DndContext
+      onDragStart={dragHandlers.onDragStart}
+      onDragMove={dragHandlers.onDragMove}
+      onDragEnd={dragHandlers.onDragEnd}
     >
       <div className="flex gap-5 h-[calc(100vh-120px)]">
         {/* Task Sidebar */}
@@ -383,13 +381,16 @@ export default function CalendarView() {
 
       {/* Drag Overlay */}
       <DragOverlay>
-        {dragHandlers.activeDragItem ? (
-          dragHandlers.activeDragItem.type === "task" ? (
-            <div className="bg-white p-2 rounded shadow-lg border">
-              {dragHandlers.activeDragItem.task.title}
+        {dragHandlers.dragState.eventId ? (
+          dragHandlers.dragState.entity === "task" ? (
+            <div className="bg-white rounded shadow-lg border px-3 py-2 max-w-xs">
+              {tasks.find(t => t.id === dragHandlers.dragState.eventId)?.title ?? "Dragging…"}
             </div>
           ) : (
-            <EventCard event={dragHandlers.activeDragItem} />
+            (() => {
+              const ev = calendarState.events.find(e => e.id === dragHandlers.dragState.eventId);
+              return ev ? <EventCard event={ev} /> : null;
+            })()
           )
         ) : null}
       </DragOverlay>

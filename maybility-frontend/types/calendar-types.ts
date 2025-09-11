@@ -1,7 +1,8 @@
 import type { Task } from "@prisma/client"
 
 export type ViewType = "month" | "week" | "day"
-export type DragType = "move" | "resize-start" | "resize-end" | null
+export type DragAction = "move" | "resize-start" | "resize-end" | null;
+export type DragEntity = "task" | "event" | null;
 export type OccurrenceSource = "SINGLE" | "RRULE" | "RDATE" | "OVERRIDE_MOVED";
 
 export interface Occurrence {
@@ -21,18 +22,21 @@ export interface Occurrence {
   goalId?: string;
 }
 
+
+
 export interface DragState {
-  eventId: string | null // Occurrence.id
-  type: "move" | "resize-start" | "resize-end" | null
-  startY: number
-  startX: number
-  containerHeight: number
-  originalStartUtc: string
-  originalEndUtc: string
-  originalDate: string
-  newStartUtc: string
-  newEndUtc: string
-  newDate: string
+  eventId: string | null;      // id of the thing being dragged (taskId or eventId)
+  action: DragAction;          // move/resize…
+  entity: DragEntity;          // task or event
+  startY: number;
+  startX: number;
+  containerHeight: number;
+  originalStartUtc: string;
+  originalEndUtc: string;
+  originalDate: string;
+  newStartUtc: string;
+  newEndUtc: string;
+  newDate: string;
 }
 
 export interface CalendarDayProps {

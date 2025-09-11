@@ -11,33 +11,7 @@ import {
 import { useDroppable } from "@dnd-kit/core"
 import { cn } from "@/lib/utils"
 
-import type { Occurrence } from "@//types/calendar-types"
-
-export interface DragState {
-  eventId: string | null // Occurrence.id
-  type: "move" | "resize-start" | "resize-end" | null
-  startY: number
-  startX: number
-  containerHeight: number
-  originalStartUtc: string
-  originalEndUtc: string
-  originalDate: string 
-  newStartUtc: string
-  newEndUtc: string
-  newDate: string
-}
-
-type MonthViewProps = {
-  currentDate: Date
-  events: Occurrence[]
-  onTimeSlotClick?: (date: string, time: string) => void
-  dragState: DragState
-  onEventClick: (event: Occurrence) => void
-  onMouseDown: (e: React.MouseEvent, eventId: string, type: "move" | "resize-start" | "resize-end", date: string) => void
-  containerRefs: React.MutableRefObject<{ [key: string]: HTMLDivElement | null }>
-  dragOverDate: string | null
-  hasDragged?: boolean
-}
+import type { Occurrence, DragState } from "@//types/calendar-types"
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
@@ -47,11 +21,15 @@ export function MonthView({
   onTimeSlotClick, 
   dragState, 
   onEventClick, 
-  onMouseDown, 
   containerRefs, 
-  dragOverDate,
-  hasDragged = false
-}: MonthViewProps) {
+}: {
+  currentDate: Date
+  events: Occurrence[]
+  onTimeSlotClick?: (date: string, time: string) => void
+  dragState: DragState
+  onEventClick: (event: Occurrence) => void
+  containerRefs: React.MutableRefObject<{ [key: string]: HTMLDivElement | null }>
+}) {
   const monthStart = startOfMonth(currentDate)
   const monthEnd = endOfMonth(currentDate)
   const startDate = startOfWeek(monthStart)
@@ -105,7 +83,7 @@ export function MonthView({
         })
         
         const { setNodeRef, isOver } = dayDroppables[index]
-        const isDragOver = dragOverDate === dayString || isOver
+        const isDragOver = dragState?.newDate === dayString || isOver
         
         return (
           <div
@@ -119,7 +97,7 @@ export function MonthView({
             data-date={dayString}
             onClick={(e) => {
               // Only trigger time slot click if not dragging and not clicking on an event
-              if (!dragState?.eventId && !hasDragged) {
+              if (!dragState?.eventId) {
                 onTimeSlotClick?.(dayString, "09:00")
               }
             }}
@@ -157,12 +135,9 @@ export function MonthView({
                       color: "white",
                       zIndex: isDragging ? 1000 : 10,
                     }}
-                    onMouseDown={(e) => onMouseDown?.(e, event.id, "move", dayString)}
                     onClick={(e) => {
                       e.stopPropagation()
-                      if (!hasDragged) {
-                        onEventClick(event)
-                      }
+                      onEventClick(event)
                     }}
                   >
                     <div className="truncate">{event.title}</div>

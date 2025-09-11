@@ -54,44 +54,37 @@ export function WeekAndDayView({
   })
 
   return (
-    <div className="flex flex-col h-full bg-white" ref={setWeekNodeRef}>
-      {/* Week header with day names and dates */}
+    <div className="flex flex-col h-full min-h-0 bg-white " ref={setWeekNodeRef}>
+      {/* Header */}
       <div className="flex border-b-2 border-stone-300 bg-stone-50">
-        {/* Time header cell (fixed width) */}
         <div className={`${TIME_COL_WIDTH_CLASS} p-3 text-sm font-semibold text-stone-600 border-r border-stone-300 bg-stone-100 shrink-0`}>
           Time
         </div>
-        {/* Day header cells */}
-        <div className={`grid ${daysGridColsClass} flex-1`}>
+        <div className={`grid ${daysGridColsClass} flex-1 min-w-0`}>
           {weekDays.map((day) => (
-            <div
-              key={day.toString()}
-              className="p-3 text-center border-r border-stone-300 last:border-r-0 min-h-[60px] flex flex-col justify-center"
-            >
+            <div key={day.toString()} className="p-3 text-center border-r border-stone-300 last:border-r-0 min-h-[60px] flex flex-col justify-center">
               <div className="text-xs text-stone-500 uppercase tracking-wide font-medium">{format(day, "EEE")}</div>
-              <div className="text-xl font-bold mt-1 text-stone-800">
-                {format(day, "d")}
-              </div>
+              <div className="text-xl font-bold mt-1 text-stone-800">{format(day, "d")}</div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Week grid with time column and day columns */}
-      <div className="flex-1 overflow-auto bg-white">
-        <div className="flex relative">
-          {/* Time column (fixed width) */}
-          <div className={`${TIME_COL_WIDTH_CLASS} border-r-2 border-stone-300 bg-stone-50 relative shrink-0`} style={{ minHeight: '1680px' }}>
-            {/* Top padding area */}
-            <div className="h-20 border-b border-stone-200 bg-stone-100/50"></div>
-            
-            {/* Hour labels */}
-            <div className="relative" style={{ height: '1440px' }}>
+      {/* Body (single scroll container) */}
+      <div className="flex-1 overflow-auto min-h-0 bg-white scrollbar-none">
+        <div className="flex relative min-w-0 scrollbar-none">
+          {/* Time column (fixed width; optional sticky) */}
+          <div className={`${TIME_COL_WIDTH_CLASS} border-r-2 border-stone-300 bg-stone-50 relative shrink-0 sticky left-0 z-10`}>
+            {/* Top padding */}
+            <div className="h-20 border-b border-stone-200 bg-stone-100/50" />
+            {/* Hour labels track fills available height */}
+            <div className="relative h-full scrollbar-none">
               {HOURS.map((hour) => (
                 <div
                   key={hour}
                   className="absolute right-3 text-xs text-stone-600 font-medium bg-stone-50 px-1"
                   style={{
+                    // position each label by % of the track height
                     top: `${(hour / 24) * 100}%`,
                     transform: "translateY(-50%)",
                   }}
@@ -100,45 +93,27 @@ export function WeekAndDayView({
                 </div>
               ))}
             </div>
-            
-            {/* Bottom padding area */}
-            <div className="h-20 border-t border-stone-200 bg-stone-100/50"></div>
+            {/* Bottom padding */}
+            <div className="h-20 border-t border-stone-200 bg-stone-100/50" />
           </div>
 
           {/* Day columns grid */}
-          <div className={`grid ${daysGridColsClass} flex-1`}>
+          <div className={`grid ${daysGridColsClass} flex-1 min-w-0`}>
             {weekDays.map((day) => {
               const dayString = format(day, "yyyy-MM-dd")
               const dayEvents = events.filter((event) => {
                 const eventDate = new Date(event.startUtc)
-                const eventLocalDate = format(eventDate, "yyyy-MM-dd")
-                const matches = eventLocalDate === dayString
-                
-                if (event.title && matches) {
-                  console.log("📍 WEEK VIEW EVENT MATCH:", {
-                    eventTitle: event.title,
-                    eventStartUtc: event.startUtc,
-                    eventDate: eventDate.toISOString(),
-                    eventLocalDate,
-                    dayString,
-                    matches
-                  })
-                }
-                
-                return matches
+                return format(eventDate, "yyyy-MM-dd") === dayString
               })
 
               return (
-                <div
-                  key={day.toString()}
-                  className="border-r border-stone-300 last:border-r-0 relative"
-                  style={{ minHeight: '1680px' }}
-                >
-                  {/* Top padding area */}
-                  <div className="h-20 border-b border-stone-200 bg-stone-50/30"></div>
-                  
-                  {/* Day column content */}
-                  <div style={{ height: '1440px' }}>
+                <div key={day.toString()} className="border-r border-stone-300 last:border-r-0 relative scrollbar-none">
+                  {/* Top padding */}
+                  <div className="h-20 border-b border-stone-200 bg-stone-50/30" />
+                  {/* Day track fills the scroll pane height */}
+                  <div className="relative h-full
+                                  [background-image:repeating-linear-gradient(to_bottom,transparent,transparent_59px,#e5e7eb_60px)]
+                                  bg-[length:100%_60px]">
                     <DayColumn
                       date={day}
                       events={dayEvents}
@@ -155,9 +130,8 @@ export function WeekAndDayView({
                       headerFormat="week"
                     />
                   </div>
-                  
-                  {/* Bottom padding area */}
-                  <div className="h-20 border-t border-stone-200 bg-stone-50/30"></div>
+                  {/* Bottom padding */}
+                  <div className="h-20 border-t border-stone-200 bg-stone-50/30" />
                 </div>
               )
             })}

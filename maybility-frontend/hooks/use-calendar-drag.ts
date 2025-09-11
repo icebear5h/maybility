@@ -7,7 +7,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core"
 
-import { Occurrence, DragState } from "@/types/calendar-types"
+import { Occurrence, DragState, DragAction, DragEntity } from "@/types/calendar-types"
 import { Task } from "@/types/task-types"
 
 
@@ -74,7 +74,8 @@ export function useCalendarDrag({
 
   const [dragState, setDragState] = useState<DragState>({
     eventId: null,
-    type: "move",
+    action: null,
+    entity: null,
     startY: 0,
     startX: 0,
     containerHeight: 0,
@@ -107,7 +108,8 @@ export function useCalendarDrag({
 
       setDragState({
         eventId: id,
-        type: "move",
+        action: "move",
+        entity: "event",
         startY: 0,
         startX: 0,
         containerHeight,
@@ -183,7 +185,8 @@ export function useCalendarDrag({
       // reset drag state and exit
       setDragState({
         eventId: null,
-        type: null,
+        action: null,
+        entity: null,
         startY: 0,
         startX: 0,
         containerHeight: 0,
@@ -290,7 +293,8 @@ export function useCalendarDrag({
     // Reset
     setDragState({
       eventId: null,
-      type: null,
+      action: null,
+      entity: null,
       startY: 0,
       startX: 0,
       containerHeight: 0,
@@ -304,17 +308,15 @@ export function useCalendarDrag({
     setDragOverDate(null)
   }, [dragState, events, onUpdateTask, setEvents])
 
-  // Register with dnd-kit (no raw listeners)
-  useDndMonitor({
-    onDragStart,
-    onDragMove,
-    onDragEnd,
-  })
+
 
   return {
     // expose whatever your UI needs
     dragState,       // includes live newStartUtc/newEndUtc/newDate
     dragOverDate,    // for column highlight if desired
     activeId,        // for DragOverlay (clone the card while dragging)
+    onDragStart,
+    onDragMove,
+    onDragEnd,
   }
 }
