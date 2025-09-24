@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "public"."tasks" ALTER COLUMN "startTime" DROP NOT NULL,
+ALTER COLUMN "endTime" DROP NOT NULL,
+ALTER COLUMN "dtstart" DROP NOT NULL;

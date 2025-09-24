@@ -15,9 +15,12 @@ interface UpdateTaskData {
   color?: string
 }
 
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-
+    const { id: taskId } = await params; 
+    if (!taskId) {
+      return NextResponse.json({ error: "Task ID is required" }, { status: 400 });
+    }
     const session = await auth()
     const userId = (session?.user as { id?: string } | undefined)?.id
     if (!userId) {
@@ -29,7 +32,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     // Get the task and verify ownership
     const task = await prisma.task.findFirst({
       where: {
-        id: params.id,
+        id: taskId,
         userId,
       },
     })
@@ -55,11 +58,11 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       updateData.dueDate = data.dueDate ? new Date(data.dueDate) : null
     }
     if (data.scheduledDate !== undefined) {
-      updateData.scheduledDate = data.scheduledDate ? new Date(data.scheduledDate) : null
+      updateData.dtstart = data.scheduledDate ? new Date(data.scheduledDate) : null
     }
 
     const updatedTask = await prisma.task.update({
-      where: { id: params.id },
+      where: { id: taskId },
       data: updateData,
     })
 
@@ -70,8 +73,13 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
   }
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+    // Await params.id
+    const { id: taskId } = await params;
+    if (!taskId) {
+      return NextResponse.json({ error: "Task ID is required" }, { status: 400 });
+    }
     const session = await auth()
     const userId = (session?.user as { id?: string } | undefined)?.id
     if (!userId) {
@@ -81,7 +89,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     // Get the task and verify ownership
     const task = await prisma.task.findFirst({
       where: {
-        id: params.id,
+        id: taskId,
         userId,
       },
     })
@@ -91,7 +99,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
     }
 
     await prisma.task.delete({
-      where: { id: params.id },
+      where: { id: taskId },
     })
 
     return NextResponse.json({ success: true })

@@ -16,6 +16,7 @@ model User {
   image         String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  timezone      String?
 
   // Relations
   accounts      Account[]
@@ -109,104 +110,71 @@ model JournalEntry {
 }
 
 model Task {
-  id                String     @id @default(cuid())
-  title             String
-  description       String?
+  id              String         @id @default(cuid())
+  title           String
+  description     String?
+  status          TaskStatus     @default(TODO)
+  priority        Priority       @default(MEDIUM)
+  color           String         @default("#3b82f6")
+  userId          String
+  goalId          String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  timezone        String?
+  // Discriminator field - determines which type of event this is
+  occurrenceType       OccurrenceType      @default(SINGLE)
+  
+  dtstart         DateTime?      // UTC
+  startTime       String?       // "HH:MM" in UTC
+  endTime         String?       // "HH:MM" in UTC
 
-  // Status and completion
-  status            TaskStatus @default(TODO)
-  priority          Priority   @default(MEDIUM)
+  
+  // Recurring event fields (only used when eventType = RECURRING)
+  rrule           String?       // e.g., "FREQ=WEEKLY;BYDAY=MO,WE,FR"
+  endDate         DateTime?      // Optional end date for the series
 
+  // Relations
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal            Goal?          @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  updates         Update[]
+  exceptions      RecurringException[] @relation("EventExceptions")
+  overrides       RecurringOverride[] @relation("EventOverrides")
 
-  // Non-recurring (single) scheduling (still useful for the "master" too)
-  dueDate           DateTime?
-  scheduledDate     DateTime?  // date anchor in local TZ
-  startTime         String?    // "HH:MM"
-  endTime           String?    // "HH:MM"
-  estimatedDuration Int?       // minutes
-
-  // Recurrence (RFC5545-like)
-  rrule             String?    // e.g. "FREQ=WEEKLY;BYDAY=MO,WE,FR"
-  dtstart           DateTime?  // UTC start for the series
-  timezone          String?    @default("America/Los_Angeles") // IANA tz for recurrence expansion
-
-  // Visual
-  color             String      @default("#3b82f6")
-
-  // Metadata
-  userId            String
-  goalId            String?
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
-
-  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  goal    Goal?    @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  updates Update[]
-
-  // Recurrence children
-  exceptions TaskException[]
-  rdates     TaskRDate[]
-  overrides  TaskOverride[]
-
-  @@index([userId, dtstart])
-  @@index([userId, scheduledDate])
+  // Add indexes
+  @@index([userId])
   @@map("tasks")
 }
 
-/// Explicitly SKIP a generated occurrence (EXDATE) or ADD an extra explicit date (when canceled=false use TaskRDate)
-model TaskException {
-  id               String   @id @default(cuid())
-  taskId           String
-  occurrenceStart  DateTime // UTC: the original instance start (before any move)
-  occurrenceEnd    DateTime
-  canceled         Boolean  @default(true)
+// Exception for a specific occurrence
+model RecurringException {
+  id              String   @id @default(cuid())
+  eventId         String
+  originalStart   DateTime // UTC
+  isCancelled     Boolean  @default(true)
+  
+  // Relations
+  event           Task     @relation("EventExceptions", fields: [eventId], references: [id], onDelete: Cascade)
 
-  task             Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-
-  @@unique([taskId, occurrenceStart]) // one edit per occurrence
-  @@index([occurrenceStart])
+  @@unique([eventId, originalStart])
+  @@map("recurring_exceptions")
 }
 
-/// Explicitly ADD an instance date (RDATE) not covered by the RRULE
-model TaskRDate {
-  id               String   @id @default(cuid())
-  taskId           String
-  occurrenceStart  DateTime // UTC start for the added occurrence
-  occurrenceEnd    DateTime
+// Override for a specific occurrence
+model RecurringOverride {
+  id              String   @id @default(cuid())
+  eventId         String
+  originalStart   DateTime // UTC
+  newStart        DateTime? // UTC
+  newEnd          DateTime? // UTC
+  title           String?
+  description     String?
+  status          TaskStatus?
+  
+  // Relations
+  event           Task     @relation("EventOverrides", fields: [eventId], references: [id], onDelete: Cascade)
 
-  task             Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-
-  @@unique([taskId, occurrenceStart])
-  @@index([occurrenceStart])
-}
-
-/// Patch fields for a single occurrence (move time, change title, etc.)
-/// If a field is null, fall back to the Task's base value.
-model TaskOverride {
-  id                String      @id @default(cuid())
-  taskId            String
-  occurrenceStart   DateTime    // UTC: key of the generated occurrence this override targets
-
-  // Overridable fields (all optional; use as partial patch)
-  title             String?
-  description       String?
-  status            TaskStatus?
-  color             String?
-
-  // You can EITHER provide a moved absolute start/end OR keep date + startTime/endTime style:
-  newStart          DateTime?   // absolute UTC start for this instance (moved)
-  newEnd            DateTime?   // absolute UTC end for this instance (moved)
-
-  // Or light-weight adjustments:
-  newScheduledDate  DateTime?   // local day for this instance
-  newStartTime      String?     // "HH:MM"
-  newEndTime        String?     // "HH:MM"
-  newEstimatedDuration Int?
-
-  task              Task        @relation(fields: [taskId], references: [id], onDelete: Cascade)
-
-  @@unique([taskId, occurrenceStart]) // one override per occurrence
-  @@index([occurrenceStart])
+  @@unique([eventId, originalStart])
+  @@map("recurring_overrides")
 }
 
 model Goal {
@@ -257,6 +225,12 @@ enum TaskStatus {
   TODO
   IN_PROGRESS
   DONE
+}
+
+enum OccurrenceType {
+  SINGLE
+  RRULE
+  UNSCHEDULED
 }
 
 enum UpdateKind {

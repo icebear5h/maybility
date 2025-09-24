@@ -1,3 +1,6 @@
+"use client"
+
+import type React from "react"
 import {
   startOfMonth,
   endOfMonth,
@@ -8,25 +11,22 @@ import {
   isSameMonth,
   isToday,
 } from "date-fns"
-import { useDroppable } from "@dnd-kit/core"
-import { cn } from "@/lib/utils"
 
-import type { Occurrence, DragState } from "@//types/calendar-types"
+import type { Occurrence } from "@/types/calendar-types"
+import { DroppableDayCell } from "@/components/calendar/months/droppable-day-cell"
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
-export function MonthView({ 
-  currentDate, 
-  events, 
-  onTimeSlotClick, 
-  dragState, 
-  onEventClick, 
-  containerRefs, 
+export function MonthView({
+  currentDate,
+  events,
+  onTimeSlotClick,
+  onEventClick,
+  containerRefs,
 }: {
   currentDate: Date
   events: Occurrence[]
   onTimeSlotClick?: (date: string, time: string) => void
-  dragState: DragState
   onEventClick: (event: Occurrence) => void
   containerRefs: React.MutableRefObject<{ [key: string]: HTMLDivElement | null }>
 }) {
@@ -37,16 +37,21 @@ export function MonthView({
 
   const days = eachDayOfInterval({ start: startDate, end: endDate })
 
-  // Create individual droppable zones for each day
-  const dayDroppables = days.map((day) => {
-    const dayString = format(day, "yyyy-MM-dd")
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    const { setNodeRef, isOver } = useDroppable({ id: dayString })
-    return { dayString, setNodeRef, isOver }
-  })
+  const handleMouseDown = (
+    e: React.MouseEvent,
+    eventId: string,
+    type: "move" | "resize-start" | "resize-end",
+    date: string,
+  ) => {
+    // This is handled by dnd-kit now
+  }
+
+  const handleEventClick = (event: Occurrence) => {
+    onEventClick(event)
+  }
 
   return (
-    <div className="grid flex-1 grid-cols-7 grid-rows-[auto_1fr]">
+    <div className="grid h-full grid-cols-7">
       {/* Weekday headers */}
       {WEEKDAYS.map((day) => (
         <div
@@ -56,111 +61,32 @@ export function MonthView({
           {day}
         </div>
       ))}
-      
+
       {/* Day cells */}
-      {days.map((day, index) => {
+      {days.map((day) => {
         const dayString = format(day, "yyyy-MM-dd")
         const dayEvents = events.filter((event) => {
           if (!event.startUtc) return false
           const eventDate = new Date(event.startUtc)
           if (isNaN(eventDate.getTime())) return false
-          // Use local date formatting to match grid cell dayString
           const eventLocalDate = format(eventDate, "yyyy-MM-dd")
-          const matches = eventLocalDate === dayString
-          
-          if (event.title && matches) {
-            console.log("📍 MONTH VIEW EVENT MATCH:", {
-              eventTitle: event.title,
-              eventStartUtc: event.startUtc,
-              eventDate: eventDate.toISOString(),
-              eventLocalDate,
-              dayString,
-              matches
-            })
-          }
-          
-          return matches
+          return eventLocalDate === dayString
         })
-        
-        const { setNodeRef, isOver } = dayDroppables[index]
-        const isDragOver = dragState?.newDate === dayString || isOver
-        
-        return (
-          <div
-            key={day.toString()}
-            ref={(el) => {
-              setNodeRef(el)
-              if (el) {
-                containerRefs.current[dayString] = el
-              }
-            }}
-            data-date={dayString}
-            onClick={(e) => {
-              // Only trigger time slot click if not dragging and not clicking on an event
-              if (!dragState?.eventId) {
-                onTimeSlotClick?.(dayString, "09:00")
-              }
-            }}
-            className={cn(
-              "min-h-[120px] border-b border-r border-stone-300/60 p-1 relative cursor-pointer transition-colors duration-200",
-              !isSameMonth(day, currentDate) && "bg-stone-50 text-stone-400",
-              isSameMonth(day, currentDate) && "bg-white",
-              isToday(day) && "bg-blue-50",
-              isDragOver && "bg-green-50 border-green-300 border-2 border-dashed"
-            )}
-          >
-            {/* Day number */}
-            <div className={cn(
-              "text-sm font-medium mb-1",
-              isToday(day) ? "text-blue-600" : "text-stone-700"
-            )}>
-              {format(day, "d")}
-            </div>
-            
-            {/* Events */}
-            <div className="space-y-1">
-              {dayEvents.slice(0, 3).map((event) => {
-                const isDragging = dragState?.eventId === event.id
-                
-                return (
-                  <div
-                    key={event.id}
-                    className={cn(
-                      "relative rounded px-2 py-1 text-xs font-medium cursor-grab",
-                      "hover:shadow-sm transition-shadow duration-150",
-                      isDragging && "opacity-50 cursor-grabbing"
-                    )}
-                    style={{
-                      backgroundColor: event.color || "#3b82f6",
-                      color: "white",
-                      zIndex: isDragging ? 1000 : 10,
-                    }}
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      onEventClick(event)
-                    }}
-                  >
-                    <div className="truncate">{event.title}</div>
-                    {event.startUtc && (
-                      <div className="text-xs opacity-90">
-                        {new Date(event.startUtc).toLocaleTimeString([], { 
-                          hour: 'numeric', 
-                          minute: '2-digit' 
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
 
-            {/* More events indicator */}
-            {dayEvents.length > 3 && (
-              <div className="text-xs text-stone-500 mt-1 px-1">
-                +{dayEvents.length - 3} more
-              </div>
-            )}
-          </div>
+        return (
+          <DroppableDayCell
+            key={day.toString()}
+            dragOverDate={null}
+            containerRefs={containerRefs}
+            handleMouseDown={handleMouseDown}
+            handleEventClick={handleEventClick}
+            dragState={null}
+            day={day}
+            isCurrentMonth={isSameMonth(day, currentDate)}
+            isToday={isToday(day)}
+            events={dayEvents}
+            onTimeSlotClick={onTimeSlotClick}
+          />
         )
       })}
     </div>

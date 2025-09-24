@@ -1,192 +1,252 @@
+"use client"
+
+import type React from "react"
+import { forwardRef, useState, useRef } from "react"
 import { useDraggable } from "@dnd-kit/core"
-import { CSS } from "@dnd-kit/utilities"
 import { cn } from "@/lib/utils"
-import type { Occurrence } from "@//types/calendar-types"
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
-import { GripVertical, Pencil, Copy, Trash2 } from "lucide-react"
+import type { Occurrence } from "@/types/calendar-types"
 
 type EventCardProps = {
   event: Occurrence
-  compact?: boolean
-  detailed?: boolean
   timeBased?: boolean
   style?: React.CSSProperties
-  onMouseDown?: (e: React.MouseEvent, eventId: string, type: "move" | "resize-start" | "resize-end", date: string) => void
   onEventClick?: (event: Occurrence) => void
-  hasDragged?: boolean
+  onEventDrag?: (
+    event: Occurrence,
+    dragType: "start" | "end" | "move",
+    deltaMinutes: number,
+    newDate?: string,
+    isComplete?: boolean,
+  ) => void
   date?: Date
-  showResizeHandles?: boolean
-  isDragging?: boolean
-}
+} & React.HTMLAttributes<HTMLDivElement>
 
-const colorClasses = {
-  green: "bg-accent-green/80 border-accent-green",
-  terracotta: "bg-accent-terracotta/80 border-accent-terracotta",
-  slate: "bg-accent-slate/80 border-accent-slate",
-  blue: "bg-blue-500/80 border-blue-500",
-  red: "bg-red-500/80 border-red-500",
-  purple: "bg-purple-500/80 border-purple-500",
-}
+export const EventCard = forwardRef<HTMLDivElement, EventCardProps>(
+  ({ event, timeBased = false, style, onEventClick, onEventDrag, date, ...props }, ref) => {
+    const [isDragging, setIsDragging] = useState(false)
+    const [dragType, setDragType] = useState<"start" | "end" | "move" | null>(null)
+    const dragStartY = useRef(0)
+    const dragStartDate = useRef<string>("")
+    const eventRef = useRef<HTMLDivElement | null>(null)
+    const dragThreshold = 3 // pixels
+    const hasDraggedRef = useRef(false)
+    const finalDeltaRef = useRef(0)
+    const finalNewDateRef = useRef<string | undefined>(undefined)
+    const dragTypeRef = useRef<"start" | "end" | "move" | null>(null)
 
-export function EventCard({ 
-  event, 
-  compact = false, 
-  detailed = false, 
-  timeBased = false,
-  style,
-  onMouseDown,
-  onEventClick,
-  hasDragged = false,
-  date,
-  showResizeHandles = false,
-  isDragging = false
-}: EventCardProps) {
-  const { attributes, listeners, setNodeRef, transform } = useDraggable({
-    id: event.id,
-  })
+    const sourceDate = date ? date.toISOString().split("T")[0] : ""
+    const {
+      attributes,
+      listeners,
+      setNodeRef: setDraggableNodeRef,
+      transform,
+      isDragging: isDndKitDragging,
+    } = useDraggable({
+      id: event.id,
+      data: {
+        type: "event",
+        event: event,
+        sourceDate: sourceDate,
+      },
+      disabled: timeBased, // Only enable dnd-kit for month view (non-time-based)
+    })
 
-  const dragStyle = {
-    transform: CSS.Translate.toString(transform),
-    zIndex: isDragging ? 1000 : 10,
-    boxShadow: isDragging ? "0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)" : undefined,
-    ...style
-  }
+    const handleClick = (e: React.MouseEvent) => {
+      e.stopPropagation()
+      if (!hasDraggedRef.current && onEventClick) {
+        console.log("[v0] EventCard clicked - opening modal")
+        onEventClick(event)
+      } else if (hasDraggedRef.current) {
+        console.log("[v0] EventCard click prevented - drag detected")
+      }
+    }
 
-  // For time-based views (day/week), use absolute positioning
-  if (timeBased) {
+    const handleMouseDown = (e: React.MouseEvent, type: "start" | "end" | "move") => {
+      e.preventDefault()
+      e.stopPropagation()
+
+      setIsDragging(true)
+      setDragType(type)
+      dragTypeRef.current = type
+      dragStartY.current = e.clientY
+      hasDraggedRef.current = false
+      finalDeltaRef.current = 0
+      finalNewDateRef.current = undefined
+
+      // Store the original date for cross-day dragging
+      const eventDate = new Date(event.startUtc)
+      dragStartDate.current = eventDate.toISOString().split("T")[0]
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        if (!onEventDrag) return
+
+        const deltaY = moveEvent.clientY - dragStartY.current
+
+        if (Math.abs(deltaY) < dragThreshold && !hasDraggedRef.current) {
+          return
+        }
+
+        hasDraggedRef.current = true
+        const deltaMinutes = deltaY // 1px = 1 minute in our calendar
+
+        finalDeltaRef.current = deltaMinutes
+
+        // For move operations, check if we're dragging to a different day
+        let newDate: string | undefined
+        if (type === "move") {
+          const calendarElement = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)
+          const dayColumn = calendarElement?.closest("[data-day-iso]")
+          if (dayColumn) {
+            newDate = dayColumn.getAttribute("data-day-iso") || undefined
+            finalNewDateRef.current = newDate
+          }
+        }
+
+        onEventDrag(event, type, deltaMinutes, newDate, false)
+      }
+
+      const handleMouseUp = (upEvent: MouseEvent) => {
+        const finalDragType = dragTypeRef.current
+
+        console.log("[v0] Mouse up detected, preparing final call")
+        console.log("[v0] hasDraggedRef.current:", hasDraggedRef.current)
+        console.log("[v0] onEventDrag exists:", !!onEventDrag)
+        console.log("[v0] finalDragType:", finalDragType)
+
+        setIsDragging(false)
+        setDragType(null)
+        dragTypeRef.current = null
+        document.removeEventListener("mousemove", handleMouseMove)
+        document.removeEventListener("mouseup", handleMouseUp)
+
+        if (hasDraggedRef.current && onEventDrag && finalDragType) {
+          console.log("[v0] Final drag values:", {
+            deltaMinutes: finalDeltaRef.current,
+            newDate: finalNewDateRef.current,
+            dragType: finalDragType,
+          })
+
+          console.log("[v0] Making final onEventDrag call with isComplete: true")
+          onEventDrag(event, finalDragType, finalDeltaRef.current, finalNewDateRef.current, true)
+          console.log("[v0] Final onEventDrag call completed")
+        } else {
+          console.log("[v0] Skipping final call - conditions not met:", {
+            hasDragged: hasDraggedRef.current,
+            hasCallback: !!onEventDrag,
+            hasDragType: !!finalDragType,
+          })
+        }
+
+        setTimeout(() => {
+          hasDraggedRef.current = false
+        }, 100)
+      }
+
+      document.addEventListener("mousemove", handleMouseMove)
+      document.addEventListener("mouseup", handleMouseUp)
+    }
+
+    const startTime = new Date(event.startUtc).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+    const endTime = new Date(event.endUtc).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+
+    const eventHeight = style?.height ? Number.parseInt(style.height.toString()) : 0
+    const isSmallEvent = eventHeight < 60 // Less than 60px height is considered small
+
+    const dndKitStyle = transform
+      ? {
+          transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+        }
+      : undefined
+
     return (
       <div
-        ref={setNodeRef}
+        ref={(el) => {
+          if (ref) {
+            if (typeof ref === "function") {
+              ref(el)
+            } else {
+              ref.current = el
+            }
+          }
+          eventRef.current = el
+          if (!timeBased) {
+            setDraggableNodeRef(el)
+          }
+        }}
+        className={cn(
+          "rounded-xl shadow-sm select-none z-10 group relative cursor-pointer",
+          "hover:shadow-md transition-all duration-200",
+          timeBased ? "absolute" : "relative",
+          (isDragging || isDndKitDragging) && "opacity-75 shadow-lg",
+        )}
         style={{
           backgroundColor: event.color || "#3b82f6",
           color: "white",
-          ...dragStyle
+          ...style,
+          ...dndKitStyle,
         }}
-        {...attributes}
-        className={cn(
-          "absolute rounded px-2 py-1 text-xs font-medium cursor-grab group",
-          "hover:shadow-sm transition-shadow duration-150 border border-transparent hover:border-white/30",
-          isDragging && "opacity-50 cursor-grabbing"
-        )}
-        onClick={(e) => {
-          e.stopPropagation()
-          if (!hasDragged) {
-            onEventClick?.(event)
-          }
-        }}
-        onMouseDown={(e) => {
-          e.stopPropagation()
-          onMouseDown?.(e, event.id, "move", date ? new Date(date).toISOString().split('T')[0] : "")
-        }}
+        onClick={handleClick}
+        {...(!timeBased ? { ...attributes, ...listeners } : {})}
+        {...props}
       >
-        {/* Main content area */}
-        <div {...listeners} className="relative z-10">
-          <div className="truncate">{event.title}</div>
-          {event.startUtc && (
-            <div className="text-xs opacity-90">
-              {new Date(event.startUtc).toLocaleTimeString([], { 
-                hour: 'numeric', 
-                minute: '2-digit' 
-              })}
-            </div>
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  if (compact) {
-    return (
-      <div
-        ref={setNodeRef}
-        style={dragStyle}
-        {...attributes}
-        {...listeners}
-        className={cn(
-          "cursor-grab rounded-sm border-l-2 bg-white px-1 py-0.5 text-xs shadow-sm transition-shadow",
-          colorClasses[event.color as keyof typeof colorClasses] || colorClasses.blue,
-          isDragging && "cursor-grabbing",
-        )}
-      >
-        <p className="truncate font-medium text-stone-800">{event.title}</p>
-      </div>
-    )
-  }
-
-  if (detailed) {
-    return (
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
+        {timeBased && (
           <div
-            ref={setNodeRef}
-            style={dragStyle}
-            {...attributes}
-            className={cn(
-              "relative flex cursor-grab flex-col rounded border-l-4 bg-white p-2 shadow-soft transition-shadow",
-              colorClasses[event.color as keyof typeof colorClasses] || colorClasses.blue,
-              isDragging && "cursor-grabbing",
-            )}
-          >
-            <div {...listeners} className="flex-grow">
-              <p className="font-semibold text-stone-800">{event.title}</p>
-              <p className="text-xs text-stone-600">
-                {event.startUtc} - {event.endUtc}
-              </p>
-            </div>
-            <GripVertical className="absolute right-1 top-1 h-3 w-3 text-stone-400" />
-          </div>
-        </ContextMenuTrigger>
-        <ContextMenuContent className="w-48 rounded-sm">
-          <ContextMenuItem>
-            <Pencil className="mr-2 h-4 w-4" />
-            <span>Edit</span>
-          </ContextMenuItem>
-          <ContextMenuItem>
-            <Copy className="mr-2 h-4 w-4" />
-            <span>Duplicate</span>
-          </ContextMenuItem>
-          <ContextMenuItem className="text-red-600">
-            <Trash2 className="mr-2 h-4 w-4" />
-            <span>Delete</span>
-          </ContextMenuItem>
-        </ContextMenuContent>
-      </ContextMenu>
-    )
-  }
+            className="absolute top-0 left-0 right-0 cursor-ns-resize opacity-0 group-hover:opacity-100 hover:bg-white/20 transition-opacity z-20"
+            style={{ height: "5%" }}
+            onMouseDown={(e) => handleMouseDown(e, "start")}
+            title="Drag to change start time"
+          />
+        )}
 
-  return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
         <div
-          ref={setNodeRef}
-          style={dragStyle}
-          {...attributes}
-          className={cn(
-            "relative flex cursor-grab items-center rounded-[2px] border-l-4 bg-white p-1.5 text-sm shadow-soft transition-shadow",
-            colorClasses[event.color as keyof typeof colorClasses] || colorClasses.blue,
-            isDragging && "cursor-grabbing",
-          )}
+          className={cn("p-2", timeBased && "cursor-move")}
+          style={{
+            marginTop: "0",
+            marginBottom: "0",
+            height: timeBased ? "calc(90% - 0px)" : "auto",
+            position: timeBased ? "absolute" : "relative",
+            top: timeBased ? "5%" : "auto",
+            left: timeBased ? "0" : "auto",
+            right: timeBased ? "0" : "auto",
+            bottom: timeBased ? "5%" : "auto",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            zIndex: 30,
+          }}
+          onMouseDown={timeBased ? (e) => handleMouseDown(e, "move") : undefined}
         >
-          <div {...listeners} className="flex-grow">
-            <p className="font-medium text-stone-800">{event.title}</p>
-          </div>
-          <GripVertical className="h-4 w-4 text-stone-400" />
+          <div className="font-medium text-sm relative z-40">{event.title}</div>
+          {timeBased && !isSmallEvent && (
+            <div className="text-xs opacity-90 mt-1 relative z-40 truncate">
+              {startTime} - {endTime}
+            </div>
+          )}
+          {!timeBased && event.startUtc && (
+            <div className="text-xs opacity-90 mt-1 relative z-40 truncate">{startTime}</div>
+          )}
+          {event.description && !isSmallEvent && (
+            <div className="text-xs opacity-80 mt-1 truncate relative z-40">{event.description}</div>
+          )}
         </div>
-      </ContextMenuTrigger>
-      <ContextMenuContent className="w-48 rounded-sm">
-        <ContextMenuItem>
-          <Pencil className="mr-2 h-4 w-4" />
-          <span>Edit</span>
-        </ContextMenuItem>
-        <ContextMenuItem>
-          <Copy className="mr-2 h-4 w-4" />
-          <span>Duplicate</span>
-        </ContextMenuItem>
-        <ContextMenuItem className="text-red-600">
-          <Trash2 className="mr-2 h-4 w-4" />
-          <span>Delete</span>
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
-  )
-}
+
+        {timeBased && (
+          <div
+            className="absolute bottom-0 left-0 right-0 cursor-ns-resize opacity-0 group-hover:opacity-100 hover:bg-white/20 transition-opacity z-20"
+            style={{ height: "5%" }}
+            onMouseDown={(e) => handleMouseDown(e, "end")}
+            title="Drag to change end time"
+          />
+        )}
+      </div>
+    )
+  },
+)
+
+EventCard.displayName = "EventCard"

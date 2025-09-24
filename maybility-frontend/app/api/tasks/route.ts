@@ -1,18 +1,18 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
-import { expandRecurringEvent } from "@/lib/recurring-events"
 import type { Occurrence } from "@/types/calendar-types"
+import { Task } from "@prisma/client"
+import rrule, { rrulestr } from "rrule"
 
 interface CreateTaskData {
   title: string
   description?: string
   status?: "TODO" | "IN_PROGRESS" | "DONE"
-  dueDate?: string
-  scheduledDate?: string
+  dtstart?: Date
+  rrule?: string
   startTime?: string
   endTime?: string
-  estimatedDuration?: number
   priority?: "LOW" | "MEDIUM" | "HIGH"
   color?: string
 }
@@ -26,133 +26,151 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const includeScheduled = searchParams.get("includeScheduled") === "true"
     const startDate = searchParams.get("startDate")
     const endDate = searchParams.get("endDate")
 
-    if (includeScheduled) {
-      // Return expanded calendar events (tasks with scheduled dates)
-      const now = new Date()
-      const defaultStart = new Date(now.getFullYear(), now.getMonth(), 1)
-      const defaultEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
+    // Return expanded calendar events (tasks with scheduled dates)
+    const now = new Date()
+    const defaultStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const defaultEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
 
-      const rangeStart = startDate ? new Date(startDate) : defaultStart
-      const rangeEnd = endDate ? new Date(endDate) : defaultEnd
+    const rangeStart = startDate ? new Date(startDate) : defaultStart
+    const rangeEnd = endDate ? new Date(endDate) : defaultEnd
 
-      // Fetch all tasks with scheduled dates (both recurring and non-recurring)
-      const tasks = await prisma.task.findMany({
-        where: {
-          userId,
-          scheduledDate: {
-            not: null,
-          },
+    // Fetch all tasks with scheduled dates (both recurring and non-recurring)
+    const singleEvents = await prisma.task.findMany({
+      where: {
+        userId,
+        rrule: null,
+        dtstart: {
+          gte: rangeStart,
+          lte: rangeEnd,
         },
-        orderBy: [{ scheduledDate: "asc" }, { startTime: "asc" }],
-      })
-
-      const allOccurrences: Occurrence[] = []
-
-      for (const task of tasks) {
-        if (task.rrule) {
-          // Expand recurring events into individual instances
-          const recurringInstances = expandRecurringEvent(task, rangeStart, rangeEnd)
-          allOccurrences.push(...recurringInstances)
-        } else if (task.scheduledDate) {
-          // Handle single events
-          const taskDate = new Date(task.scheduledDate)
-          
-          // Only include if within requested range
-          if (taskDate >= rangeStart && taskDate <= rangeEnd) {
-            const startDateTime = new Date(taskDate)
-            const endDateTime = new Date(taskDate)
-
-            // Set times if available
-            if (task.startTime) {
-              const [hours, minutes] = task.startTime.split(':').map(Number)
-              startDateTime.setHours(hours, minutes, 0, 0)
-            }
-
-            if (task.endTime) {
-              const [hours, minutes] = task.endTime.split(':').map(Number)
-              endDateTime.setHours(hours, minutes, 0, 0)
-            } else if (task.startTime) {
-              // Default to 1 hour duration
-              endDateTime.setTime(startDateTime.getTime() + 60 * 60 * 1000)
-            }
-
-            const occurrence: Occurrence = {
-              id: task.id,
-              taskId: task.id,
-              title: task.title,
-              description: task.description || "",
-              startUtc: startDateTime.toISOString(),
-              endUtc: endDateTime.toISOString(),
-              color: task.color || "#3b82f6",
-              status: task.status,
-              source: "SINGLE" as const,
-              isRecurring: false,
-              hasOverride: false
-            }
-
-            allOccurrences.push(occurrence)
-          }
-        }
-      }
-
-      // Sort by start time
-      allOccurrences.sort((a, b) => new Date(a.startUtc).getTime() - new Date(b.startUtc).getTime())
-
-      return NextResponse.json(allOccurrences)
-    } else {
-      // Return regular tasks (for sidebar)
-      const tasks = await prisma.task.findMany({
-        where: {
-          userId,
+      },
+      orderBy: [{ dtstart: "asc" }, { startTime: "asc" }],
+    })
+    const recurringEvents = await prisma.task.findMany({
+      where: {
+        userId,
+        rrule: {
+          not: null,
         },
-        orderBy: [
-          { status: "asc" },
-          { priority: "desc" },
-          { createdAt: "desc" },
-        ],
-      })
+        dtstart: {
+          lte: rangeStart,
+        },
 
-      return NextResponse.json(tasks)
-    }
+      },
+      orderBy: [{ dtstart: "asc" }, { startTime: "asc" }],
+    })
+    const expandedRecurringEvents = expandRecurringEvents(recurringEvents, rangeStart, rangeEnd)
+    const allEvents = [...singleEvents, ...expandedRecurringEvents]
+    return NextResponse.json(allEvents)
   } catch (error) {
     console.error("Error fetching tasks:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+    return NextResponse.json({ error: "Internal server error", details: errorMessage }, { status: 500 })
   }
 }
+
+function expandRecurringEvents(recurreingEvents: Task[], windowStart: Date, windowEnd: Date) {
+  const expandedEvents: Occurrence[] = []
+  for (const event of recurreingEvents) {
+    // Skip events without a start date
+    if (!event.dtstart) continue;
+    
+    let str = toICalDateTime(event.dtstart) + "\n" + event.rrule
+    let rrule = rrulestr(str)
+    let endDate = windowEnd
+    if (event.endDate) {
+      if (event.endDate < windowEnd) {
+        endDate = new Date(event.endDate)
+      }
+    }
+    let occurrences = rrule.between(windowStart, endDate)
+    occurrences.map((instance) => {
+      expandedEvents.push({
+        id: event.id,
+        title: event.title,
+        description: event.description || "",
+        startUtc: instance.toISOString(),
+        endUtc: instance.toISOString(),
+        color: event.color,
+        status: event.status,
+        occurrenceType: "RRULE",
+        hasOverride: false,
+        taskId: event.id,
+        goalId: event.goalId || "",
+      })
+    })
+  }
+  return expandedEvents
+}
+
+function toICalDateTime(date: Date): string {
+  return date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+}
+
 
 export async function POST(request: NextRequest) {
   try {
     const session = await auth()
     const userId = (session?.user as { id?: string } | undefined)?.id
+    
     if (!userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const data: CreateTaskData = await request.json()
+    // Verify user exists in database before proceeding
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true }
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    const data: any = await request.json()
+    
+    // Map scheduledDate to dtstart if provided
+    const taskData: any = {
+      title: data.title,
+      description: data.description,
+      status: data.status,
+      priority: data.priority,
+      color: data.color,
+      userId,
+    };
+
+    // Handle date fields
+    if (data.scheduledDate) {
+      taskData.dtstart = new Date(data.scheduledDate);
+    } else if (data.dtstart) {
+      taskData.dtstart = new Date(data.dtstart);
+    }
+
+    // Handle time fields
+    if (data.startTime) taskData.startTime = data.startTime;
+    if (data.endTime) taskData.endTime = data.endTime;
+    
+    // Handle optional fields
+    if (data.goalId) taskData.goalId = data.goalId;
+    if (data.rrule) taskData.rrule = data.rrule;
+    if (data.endDate) taskData.endDate = new Date(data.endDate);
+    if (data.timezone) taskData.timezone = data.timezone;
+    if (data.occurrenceType) taskData.occurrenceType = data.occurrenceType;
 
     const task = await prisma.task.create({
-      data: {
-        title: data.title,
-        description: data.description || "",
-        status: data.status || "TODO",
-        dueDate: data.dueDate ? new Date(data.dueDate) : null,
-        scheduledDate: data.scheduledDate ? new Date(data.scheduledDate) : null,
-        startTime: data.startTime || null,
-        endTime: data.endTime || null,
-        estimatedDuration: data.estimatedDuration || null,
-        priority: data.priority || "MEDIUM",
-        color: data.color || "#3b82f6",
-        userId,
-      },
-    })
+      data: taskData,
+    });
 
-    return NextResponse.json(task, { status: 201 })
+    return NextResponse.json(task, { status: 201 });
   } catch (error) {
-    console.error("Error creating task:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    console.error('Error creating task:', error);
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
+    return NextResponse.json(
+      { error: 'Failed to create task', details: errorMessage },
+      { status: 500 }
+    );
   }
 }

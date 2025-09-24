@@ -1,3 +1,5 @@
+"use client"
+
 import { useState, useCallback } from "react"
 import { format, addMonths, subMonths, addDays } from "date-fns"
 import type { Occurrence, ViewType } from "@/types/calendar-types"
@@ -8,15 +10,56 @@ interface UseCalendarStateProps {
   initialDate?: Date
 }
 
-export function useCalendarState({ 
-  initialEvents = [], 
-  initialDate = new Date() 
+const dummyEvents: Occurrence[] = [
+  {
+    id: "1",
+    taskId: "task-1",
+    goalId: "goal-1",
+    title: "Team Meeting",
+    description: "Weekly team sync",
+    startUtc: new Date(2024, 11, 19, 10, 0).toISOString(),
+    endUtc: new Date(2024, 11, 19, 11, 0).toISOString(),
+    color: "#3b82f6",
+    status: "TODO",
+    occurrenceType: "SINGLE",
+    hasOverride: false,
+  },
+  {
+    id: "2",
+    taskId: "task-2",
+    goalId: "goal-2",
+    title: "Project Review",
+    description: "Review project progress",
+    startUtc: new Date(2024, 11, 19, 14, 0).toISOString(),
+    endUtc: new Date(2024, 11, 19, 16, 0).toISOString(),
+    color: "#ef4444",
+    status: "TODO",
+    occurrenceType: "SINGLE",
+    hasOverride: false,
+  },
+  {
+    id: "3",
+    taskId: "task-3",
+    goalId: "goal-3",
+    title: "Client Call",
+    description: "Call with client about requirements",
+    startUtc: new Date(2024, 11, 20, 9, 0).toISOString(),
+    endUtc: new Date(2024, 11, 20, 10, 30).toISOString(),
+    color: "#10b981",
+    status: "TODO",
+    occurrenceType: "SINGLE",
+    hasOverride: false,
+  },
+]
+
+export function useCalendarState({
+  initialEvents = dummyEvents,
+  initialDate = new Date(),
 }: UseCalendarStateProps = {}) {
   const [currentDate, setCurrentDate] = useState(initialDate)
   const [events, setEvents] = useState<Occurrence[]>(initialEvents)
   const [view, setView] = useState<ViewType>("month")
   const [selectedGoalIds, setSelectedGoalIds] = useState<string[]>([])
-  const [showGoalDropdown, setShowGoalDropdown] = useState(false)
 
   // Event modal state
   const [showEventModal, setShowEventModal] = useState(false)
@@ -39,7 +82,7 @@ export function useCalendarState({
       setCurrentDate((prev) => subMonths(prev, 1))
     }
   }, [view])
-  
+
   const handleNextPeriod = useCallback(() => {
     if (view === "day") {
       setCurrentDate((prev) => addDays(prev, 1))
@@ -49,70 +92,142 @@ export function useCalendarState({
       setCurrentDate((prev) => addMonths(prev, 1))
     }
   }, [view])
-  
+
   const handleToday = useCallback(() => {
     setCurrentDate(new Date())
   }, [])
 
-  // Event operations
-  const handleCreateEvent = useCallback(() => {
-    if (newEventTitle.trim() && newEventStartTime && newEventEndTime) {
-      const newEvent: Occurrence = {
-        id: `event-${Date.now()}`,
-        taskId: `temp-${Date.now()}`,
-        title: newEventTitle,
-        description: "",
-        startUtc: new Date(`${selectedDate}T${newEventStartTime}:00`).toISOString(),
-        endUtc: new Date(`${selectedDate}T${newEventEndTime}:00`).toISOString(),
-        color: "#1e40af",
-        status: "TODO",
-        source: "SINGLE",
-        isRecurring: false,
-        hasOverride: false
-      }
-      setEvents((prev) => [...prev, newEvent])
-      setNewEventTitle("")
-      setNewEventStartTime("")
-      setNewEventEndTime("")
-      setShowEventModal(false)
+  const handleGetEvents = async (windowStart: Date, windowEnd: Date) => {
+    try {
+      const res = await fetch(`/api/tasks?startDate=${windowStart.toISOString()}&endDate=${windowEnd.toISOString()}`)
+      if (!res.ok && res.status !== 200) throw new Error("Failed to get events")
+      setEvents(await res.json())
+    } catch (e) {
+      console.error("Failed to get events:", e)
+      alert("Failed to get events. Please try again.")
     }
-  }, [newEventTitle, newEventStartTime, newEventEndTime, selectedDate])
+  }
 
-  const handleEventClick = useCallback((event: Occurrence) => {
-    setSelectedEvent(event)
-    setShowEventDetailsModal(true)
-  }, [])
+  const handleDeleteEvent = async (id: string) => {
+    try {
+      const res = await fetch(`/api/tasks/${id}`, { method: "DELETE" })
+      if (!res.ok && res.status !== 204) throw new Error("Failed to delete task")
 
-  const handleDeleteEvent = useCallback((eventId: string) => {
-    setEvents((prev) => prev.filter((event) => event.id !== eventId))
-    setShowEventDetailsModal(false)
-  }, [])
+      setEvents((prev) => prev.filter((event) => event.id !== id))
+    } catch (e) {
+      console.error("Failed to delete task:", e)
+      alert("Failed to delete task. Please try again.")
+    }
+  }
 
-  const handleUpdateEvent = useCallback((eventId: string, updates: Partial<Occurrence>) => {
-    setEvents((prev) => prev.map((event) => (event.id === eventId ? { ...event, ...updates } : event)))
-  }, [])
+  const handleUpdateEvent = async (id: string, updates: Partial<Task>) => {
+    try {
+      const res = await fetch(`/api/tasks/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      })
 
-  const handleTimeSlotClick = useCallback((date: string, time: string) => {
-    setSelectedDate(date)
-    setNewEventStartTime(time)
-    const [hours, minutes] = time.split(":").map(Number)
-    const endTime = `${(hours + 1).toString().padStart(2, "0")}:${minutes.toString().padStart(2, "0")}`
-    setNewEventEndTime(endTime)
-    setShowEventModal(true)
-  }, [])
+      if (!res.ok) {
+        throw new Error(`Failed to update task: ${res.status}`)
+      }
+
+      const updatedTask = await res.json()
+      console.log("[v0] Updated task via API:", id, updates)
+      
+      // Return the updated task for the caller to handle
+      return updatedTask
+    } catch (err: any) {
+      console.error("Error updating task:", err)
+      // Re-throw the error so the caller can handle it (for optimistic updates)
+      throw err
+    }
+  }
+
+  const handleCreateEvent = async (eventData: {
+    title: string
+    description: string
+    date: string
+    startTime: string
+    endTime: string
+  }) => {
+    try {
+      const startDate = new Date(`${eventData.date}T${eventData.startTime}:00`);
+      const endDate = new Date(`${eventData.date}T${eventData.endTime}:00`);
+  
+      // Make API call to create the task
+      const response = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          title: eventData.title,
+          description: eventData.description,
+          status: 'TODO',
+          priority: 'MEDIUM',
+          scheduledDate: eventData.date,
+          startTime: eventData.startTime,
+          endTime: eventData.endTime,
+          color: '#3b82f6',
+        }),
+      });
+  
+      if (!response.ok) {
+        throw new Error(`Failed to create task: ${response.status}`);
+      }
+  
+      const newTask = await response.json();
+  
+      // Create the event with the actual task data
+      const newEvent: Occurrence = {
+        id: newTask.id,
+        goalId: "",
+        title: newTask.title,
+        description: newTask.description || '',
+        startUtc: startDate.toISOString(),
+        endUtc: endDate.toISOString(),
+        color: newTask.color || '#3b82f6',
+        status: newTask.status || 'TODO',
+        occurrenceType: 'SINGLE',
+        hasOverride: false,
+      };
+  
+      // Add the new event to the calendar
+      setEvents(prev => [...prev, newEvent]);
+  
+      // Reset the form
+      setNewEventTitle('');
+      setNewEventStartTime('');
+      setNewEventEndTime('');
+      setShowEventModal(false);
+  
+    } catch (error) {
+      console.error('Error creating task:', error);
+      // Show the modal again with the original data
+      setNewEventTitle(eventData.title);
+      setNewEventStartTime(eventData.startTime);
+      setNewEventEndTime(eventData.endTime);
+      setShowEventModal(true);
+      alert('Failed to create event. Please try again.');
+    }
+  }
 
   // Filter functions
-  const getFilteredEvents = useCallback((todos: Task[]) => {
-    if (selectedGoalIds.length === 0) return events
+  const getFilteredEvents = useCallback(
+    (todos: Task[]) => {
+      if (selectedGoalIds.length === 0) return events
 
-    return events.filter((event) => {
-      if (event.taskId && event.taskId !== `temp-${event.id}`) {
-        const relatedTodo = todos.find((todo) => todo.id === event.taskId)
-        return relatedTodo?.goalId && selectedGoalIds.includes(relatedTodo.goalId)
-      }
-      return false
-    })
-  }, [events, selectedGoalIds])
+      return events.filter((event) => {
+        if (event.taskId && event.taskId !== `temp-${event.id}`) {
+          const relatedTodo = todos.find((todo) => todo.id === event.taskId)
+          return relatedTodo?.goalId && selectedGoalIds.includes(relatedTodo.goalId)
+        }
+        return false
+      })
+    },
+    [events, selectedGoalIds],
+  )
 
   const getDateRangeText = useCallback(() => {
     if (view === "day") {
@@ -136,9 +251,7 @@ export function useCalendarState({
     setView,
     selectedGoalIds,
     setSelectedGoalIds,
-    showGoalDropdown,
-    setShowGoalDropdown,
-    
+
     // Event modal state
     showEventModal,
     setShowEventModal,
@@ -150,22 +263,21 @@ export function useCalendarState({
     setNewEventStartTime,
     newEventEndTime,
     setNewEventEndTime,
-    
+
     // Event details modal state
     showEventDetailsModal,
     setShowEventDetailsModal,
     selectedEvent,
     setSelectedEvent,
-    
+
     // Functions
     handlePrevPeriod,
     handleNextPeriod,
     handleToday,
+    handleGetEvents,
     handleCreateEvent,
-    handleEventClick,
     handleDeleteEvent,
     handleUpdateEvent,
-    handleTimeSlotClick,
     getFilteredEvents,
     getDateRangeText,
   }

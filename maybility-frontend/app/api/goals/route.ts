@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
           select: {
             id: true,
             status: true,
-            dueDate: true,
+            dtstart: true,
           },
         },
         updates: {
@@ -65,6 +65,16 @@ export async function POST(request: NextRequest) {
     const userId = (session?.user as { id?: string } | undefined)?.id
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    // Verify user exists in database before proceeding
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true }
+    });
+
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
     const data: CreateGoalData = await request.json()
