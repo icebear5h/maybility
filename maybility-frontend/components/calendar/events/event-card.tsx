@@ -74,7 +74,7 @@ export const EventCard = forwardRef<HTMLDivElement, EventCardProps>(
       finalNewDateRef.current = undefined
 
       // Store the original date for cross-day dragging
-      const eventDate = new Date(event.startUtc)
+      const eventDate = event.date instanceof Date ? event.date : new Date(event.date)
       dragStartDate.current = eventDate.toISOString().split("T")[0]
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
@@ -146,14 +146,19 @@ export const EventCard = forwardRef<HTMLDivElement, EventCardProps>(
       document.addEventListener("mouseup", handleMouseUp)
     }
 
-    const startTime = new Date(event.startUtc).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    })
-    const endTime = new Date(event.endUtc).toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-    })
+    // Format time from HH:MM to locale string
+    const formatTime = (time: string) => {
+      const [hours, minutes] = time.split(":")
+      const date = new Date()
+      date.setHours(parseInt(hours), parseInt(minutes))
+      return date.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    }
+    
+    const startTime = formatTime(event.startTime)
+    const endTime = formatTime(event.endTime)
 
     const eventHeight = style?.height ? Number.parseInt(style.height.toString()) : 0
     const isSmallEvent = eventHeight < 60 // Less than 60px height is considered small
@@ -228,7 +233,7 @@ export const EventCard = forwardRef<HTMLDivElement, EventCardProps>(
               {startTime} - {endTime}
             </div>
           )}
-          {!timeBased && event.startUtc && (
+          {!timeBased && event.startTime && (
             <div className="text-xs opacity-90 mt-1 relative z-40 truncate">{startTime}</div>
           )}
           {event.description && !isSmallEvent && (

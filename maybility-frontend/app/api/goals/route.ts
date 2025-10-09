@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
           select: {
             id: true,
             status: true,
-            dtstart: true,
+            startDate: true,
           },
         },
         updates: {

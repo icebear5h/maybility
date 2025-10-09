@@ -6,8 +6,9 @@ export interface Occurrence {
   goalId: string
   title: string
   description?: string
-  startUtc: string
-  endUtc: string
+  date: Date
+  startTime: string
+  endTime: string
   color: string
   status: "TODO" | "IN_PROGRESS" | "DONE"
   occurrenceType: "SINGLE" | "RRULE" | "UNSCHEDULED"

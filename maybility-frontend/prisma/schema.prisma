@@ -124,15 +124,14 @@ model Task {
   // Discriminator field - determines which type of event this is
   occurrenceType       OccurrenceType      @default(SINGLE)
   
-  dtstart         DateTime?      // UTC
-  startTime       String?       // "HH:MM" in UTC
-  endTime         String?       // "HH:MM" in UTC
+  startDate       DateTime
+  endDate         DateTime?
 
-  
+  startTime       String?      // "HH:MM" in UTC
+  endTime         String?      // "HH:MM" in UTC
+
   // Recurring event fields (only used when eventType = RECURRING)
   rrule           String?       // e.g., "FREQ=WEEKLY;BYDAY=MO,WE,FR"
-  endDate         DateTime?      // Optional end date for the series
-
   // Relations
   user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   goal            Goal?          @relation(fields: [goalId], references: [id], onDelete: Cascade)

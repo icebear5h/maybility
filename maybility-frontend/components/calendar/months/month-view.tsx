@@ -66,8 +66,8 @@ export function MonthView({
       {days.map((day) => {
         const dayString = format(day, "yyyy-MM-dd")
         const dayEvents = events.filter((event) => {
-          if (!event.startUtc) return false
-          const eventDate = new Date(event.startUtc)
+          if (!event.date) return false
+          const eventDate = event.date instanceof Date ? event.date : new Date(event.date)
           if (isNaN(eventDate.getTime())) return false
           const eventLocalDate = format(eventDate, "yyyy-MM-dd")
           return eventLocalDate === dayString

@@ -79,7 +79,7 @@ export function DayColumn({ date, events, onTimeSlotClick, onEventClick, onEvent
             key={ev.id}
             event={ev}
             timeBased={true}
-            style={getEventStyle(ev.startUtc, ev.endUtc)}
+            style={getEventStyle(ev.startTime, ev.endTime)}
             onEventClick={onEventClick}
             onEventDrag={onEventDrag}
           />

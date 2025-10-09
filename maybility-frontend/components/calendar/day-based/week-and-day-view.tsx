@@ -197,8 +197,8 @@ export function WeekAndDayView({
             {weekDays.map((day) => {
               const dayString = format(day, "yyyy-MM-dd")
               const dayEvents = events.filter((event) => {
-                if (!event.startUtc) return false
-                const eventDate = new Date(event.startUtc)
+                if (!event.date) return false
+                const eventDate = event.date instanceof Date ? event.date : new Date(event.date)
                 if (isNaN(eventDate.getTime())) return false
                 return format(eventDate, "yyyy-MM-dd") === dayString
               })
@@ -234,19 +234,9 @@ export function WeekAndDayView({
                         })}
 
                       {dayEvents.map((event) => {
-                        const startDate = new Date(event.startUtc)
-                        const endDate = new Date(event.endUtc)
-
-                        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-                          console.warn(`Invalid date for event ${event.id}:`, {
-                            startUtc: event.startUtc,
-                            endUtc: event.endUtc,
-                          })
-                          return null
-                        }
-
-                        const startTime = startDate.toTimeString().slice(0, 5)
-                        const endTime = endDate.toTimeString().slice(0, 5)
+                        // Use the new date/startTime/endTime structure
+                        const startTime = event.startTime
+                        const endTime = event.endTime
                         const eventStyle = getEventStyle(startTime, endTime)
 
                         return (

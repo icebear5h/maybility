@@ -53,18 +53,19 @@ const CalendarView = () => {
       setTasks((prev) => [...prev, newTask])
 
       // If the task has a scheduled date, also create an event
-      if (newTask.scheduledDate) {
+      if (newTask.dtstart) {
         const newEvent: Occurrence = {
           id: `temp-${Date.now()}`,
           taskId: newTask.id,
           title: newTask.title,
           description: newTask.description,
-          startUtc: new Date(`${newTask.scheduledDate}T${newTask.startTime || "09:00"}:00`).toISOString(),
-          endUtc: new Date(`${newTask.scheduledDate}T${newTask.endTime || "10:00"}:00`).toISOString(),
+          date: new Date(newTask.dtstart),
+          startTime: newTask.startTime || "09:00",
+          endTime: newTask.endTime || "10:00",
           color: newTask.color || "#3b82f6",
           status: (newTask.status as "TODO" | "IN_PROGRESS" | "DONE") || "TODO",
-          goalId: newTask.goalId || "", // Ensure this matches the expected type (string, not null)
-          occurrenceType: "SINGLE", // This is now properly typed
+          goalId: newTask.goalId || "",
+          occurrenceType: "SINGLE",
           hasOverride: false,
         }
         calendarState.setEvents((prev) => [...prev, newEvent])
@@ -79,7 +80,7 @@ const CalendarView = () => {
   const handleUpdateTask = async (id: string, updates: Partial<Task>) => {
     try {
       const response = await fetch(`/api/tasks/${id}`, {
-        method: "PUT",
+        method: "PATCH",
         headers: {
           "Content-Type": "application/json",
         },
@@ -124,19 +125,6 @@ const CalendarView = () => {
         const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
         const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0)
 
-        // Load tasks from API
-        const tasksResponse = await fetch(
-          `/api/tasks?startDate=${startOfMonth.toISOString()}&endDate=${endOfMonth.toISOString()}`,
-        )
-
-        if (!tasksResponse.ok) {
-          throw new Error("Failed to load tasks")
-        }
-
-        const tasks = await tasksResponse.json()
-        setTasks(tasks)
-
-        // Load calendar events
         await calendarState.handleGetEvents(startOfMonth, endOfMonth)
 
         setError(null)
@@ -164,7 +152,8 @@ const CalendarView = () => {
 
   const handleEventClick = (event: Occurrence) => {
     calendarState.setSelectedEvent(event)
-    calendarState.setSelectedDate(event.startUtc.split("T")[0])
+    const eventDate = event.date instanceof Date ? event.date : new Date(event.date)
+    calendarState.setSelectedDate(eventDate.toISOString().split("T")[0])
     calendarState.setShowEventModal(true)
   }
 
@@ -180,109 +169,86 @@ const CalendarView = () => {
     isComplete = true,
   ) => {
     try {
-      const originalStart = new Date(event.startUtc)
-      const originalEnd = new Date(event.endUtc)
+      // Parse current times from event
+      const [startHours, startMins] = event.startTime.split(":").map(Number)
+      const [endHours, endMins] = event.endTime.split(":").map(Number)
+      const startMinutes = startHours * 60 + startMins
+      const endMinutes = endHours * 60 + endMins
+      const duration = endMinutes - startMinutes
 
-      let newStartTime: Date
-      let newEndTime: Date
+      let newStartTimeStr: string
+      let newEndTimeStr: string
       let newScheduledDate: string
+      const eventDate = event.date instanceof Date ? event.date : new Date(event.date)
 
       if (dragType === "start") {
         // Only change start time
-        const newStartMinutes = originalStart.getUTCHours() * 60 + originalStart.getUTCMinutes() + deltaMinutes
-        const snappedStartMinutes = snapToFiveMinutes(Math.max(0, Math.min(1439, newStartMinutes)))
-        const snappedHours = Math.floor(snappedStartMinutes / 60)
-        const snappedMins = snappedStartMinutes % 60
-
-        newStartTime = new Date(originalStart)
-        newStartTime.setUTCHours(snappedHours, snappedMins, 0, 0)
-        newEndTime = originalEnd
-        newScheduledDate = newStartTime.toISOString().split("T")[0]
+        const newStartMinutes = snapToFiveMinutes(Math.max(0, Math.min(1439, startMinutes + deltaMinutes)))
+        const newStartHours = Math.floor(newStartMinutes / 60)
+        const newStartMins = newStartMinutes % 60
+        newStartTimeStr = `${newStartHours.toString().padStart(2, "0")}:${newStartMins.toString().padStart(2, "0")}`
+        newEndTimeStr = event.endTime
+        newScheduledDate = eventDate.toISOString().split("T")[0]
       } else if (dragType === "end") {
         // Only change end time
-        const newEndMinutes = originalEnd.getUTCHours() * 60 + originalEnd.getUTCMinutes() + deltaMinutes
-        const snappedEndMinutes = snapToFiveMinutes(Math.max(0, Math.min(1439, newEndMinutes)))
-        const snappedHours = Math.floor(snappedEndMinutes / 60)
-        const snappedMins = snappedEndMinutes % 60
-
-        newStartTime = originalStart
-        newEndTime = new Date(originalEnd)
-        newEndTime.setUTCHours(snappedHours, snappedMins, 0, 0)
-        newScheduledDate = originalStart.toISOString().split("T")[0]
+        const newEndMinutes = snapToFiveMinutes(Math.max(0, Math.min(1439, endMinutes + deltaMinutes)))
+        const newEndHours = Math.floor(newEndMinutes / 60)
+        const newEndMins = newEndMinutes % 60
+        newStartTimeStr = event.startTime
+        newEndTimeStr = `${newEndHours.toString().padStart(2, "0")}:${newEndMins.toString().padStart(2, "0")}`
+        newScheduledDate = eventDate.toISOString().split("T")[0]
       } else {
         // Move entire event
-        const duration = originalEnd.getTime() - originalStart.getTime()
-
         if (newDate) {
-          // Moving to a different date - apply both date change AND time change
-          const originalTime = originalStart.toTimeString().slice(0, 5)
-          const [hours, minutes] = originalTime.split(":").map(Number)
-          const originalMinutes = hours * 60 + minutes
-          const newMinutes = originalMinutes + deltaMinutes
-          const snappedMinutes = snapToFiveMinutes(Math.max(0, Math.min(1439, newMinutes)))
-          const newHours = Math.floor(snappedMinutes / 60)
-          const newMins = snappedMinutes % 60
-          const newTimeString = `${newHours.toString().padStart(2, "0")}:${newMins.toString().padStart(2, "0")}`
-
-          newStartTime = new Date(`${newDate}T${newTimeString}:00`)
-          newEndTime = new Date(newStartTime.getTime() + duration)
+          // Moving to a different date
+          const newStartMinutes = snapToFiveMinutes(Math.max(0, Math.min(1439, startMinutes + deltaMinutes)))
+          const newStartHours = Math.floor(newStartMinutes / 60)
+          const newStartMins = newStartMinutes % 60
+          newStartTimeStr = `${newStartHours.toString().padStart(2, "0")}:${newStartMins.toString().padStart(2, "0")}`
+          
+          const newEndMinutes = newStartMinutes + duration
+          const newEndHours = Math.floor(newEndMinutes / 60)
+          const newEndMins = newEndMinutes % 60
+          newEndTimeStr = `${newEndHours.toString().padStart(2, "0")}:${newEndMins.toString().padStart(2, "0")}`
           newScheduledDate = newDate
         } else {
-          // Moving within the same day - only apply time change
-          const currentMinutes = originalStart.getUTCHours() * 60 + originalStart.getUTCMinutes()
-          const newMinutes = currentMinutes + deltaMinutes
-          const snappedMinutes = snapToFiveMinutes(Math.max(0, Math.min(1439, newMinutes)))
-          const snappedHours = Math.floor(snappedMinutes / 60)
-          const snappedMins = snappedMinutes % 60
-
-          newStartTime = new Date(originalStart)
-          newStartTime.setUTCHours(snappedHours, snappedMins, 0, 0)
-          newEndTime = new Date(newStartTime.getTime() + duration)
-          newScheduledDate = newStartTime.toISOString().split("T")[0]
+          // Moving within the same day
+          const newStartMinutes = snapToFiveMinutes(Math.max(0, Math.min(1439, startMinutes + deltaMinutes)))
+          const newStartHours = Math.floor(newStartMinutes / 60)
+          const newStartMins = newStartMinutes % 60
+          newStartTimeStr = `${newStartHours.toString().padStart(2, "0")}:${newStartMins.toString().padStart(2, "0")}`
+          
+          const newEndMinutes = newStartMinutes + duration
+          const newEndHours = Math.floor(newEndMinutes / 60)
+          const newEndMins = newEndMinutes % 60
+          newEndTimeStr = `${newEndHours.toString().padStart(2, "0")}:${newEndMins.toString().padStart(2, "0")}`
+          newScheduledDate = eventDate.toISOString().split("T")[0]
         }
-      }
-
-      // Ensure end time is after start time
-      if (newEndTime <= newStartTime) {
-        newEndTime = new Date(newStartTime.getTime() + 15 * 60000) // Minimum 15 minutes
       }
 
       if (isComplete) {
         console.log("[v0] Drag completed - making API call with final values")
 
-        // Update the event via API
+        // Update the event via API using taskId
         const updates = {
           scheduledDate: newScheduledDate,
-          startTime: newStartTime.toTimeString().slice(0, 5),
-          endTime: newEndTime.toTimeString().slice(0, 5),
+          startTime: newStartTimeStr,
+          endTime: newEndTimeStr,
         }
 
-        console.log("[v0] Final API call parameters:", {
-          eventId: event.taskId || event.id,
-          eventTitle: event.title,
-          dragType,
-          deltaMinutes,
-          newDate,
-          originalDate: originalStart.toISOString().split("T")[0],
-          originalStartTime: originalStart.toTimeString().slice(0, 5),
-          originalEndTime: originalEnd.toTimeString().slice(0, 5),
-          updates,
-        })
-
-        console.log("[v0] Updated event locally:", event.taskId || event.id, updates)
+        console.log("[v0] Updated event via API:", event.taskId || event.id, updates)
         await calendarState.handleUpdateEvent(event.taskId || event.id, updates)
-      } else {
-        console.log("[v0] Visual drag update - no API call")
       }
 
-      // Update the local event state immediately for smooth UX (both visual and final updates)
+      // Update the local event state immediately for smooth UX
       calendarState.setEvents((prev) =>
         prev.map((e) =>
           e.id === event.id
             ? {
                 ...e,
-                startUtc: newStartTime.toISOString(),
-                endUtc: newEndTime.toISOString(),
+                date: new Date(newScheduledDate),
+                startTime: newStartTimeStr,
+                endTime: newEndTimeStr,
               }
             : e,
         ),
@@ -326,7 +292,7 @@ const CalendarView = () => {
 
         // Update the task with the new scheduled date
         await handleUpdateTask(taskId, {
-          scheduledDate: targetDate,
+          startDate: new Date(targetDate),
           // Preserve the existing time or set a default
           startTime: task.startTime || "09:00",
           endTime: task.endTime || "10:00",
@@ -354,14 +320,8 @@ const CalendarView = () => {
 
       if (sourceDate !== targetDate) {
         // Preserve the original time, only change the date
-        const originalStart = new Date(draggedEvent.startUtc)
-        const originalEnd = new Date(draggedEvent.endUtc)
-        const startTime = originalStart.toTimeString().slice(0, 5)
-        const endTime = originalEnd.toTimeString().slice(0, 5)
-
-        // Calculate new UTC times
-        const newStartUtc = new Date(`${targetDate}T${startTime}:00`).toISOString()
-        const newEndUtc = new Date(`${targetDate}T${endTime}:00`).toISOString()
+        const startTime = draggedEvent.startTime
+        const endTime = draggedEvent.endTime
 
         // OPTIMISTIC UPDATE: Update UI immediately for smooth UX
         const originalEvent = { ...draggedEvent }
@@ -370,8 +330,9 @@ const CalendarView = () => {
             e.id === draggedEvent.id
               ? {
                   ...e,
-                  startUtc: newStartUtc,
-                  endUtc: newEndUtc,
+                  date: new Date(targetDate),
+                  startTime: startTime,
+                  endTime: endTime,
                 }
               : e,
           ),

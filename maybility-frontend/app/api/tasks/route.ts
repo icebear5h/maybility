@@ -4,17 +4,37 @@ import { prisma } from "@/lib/prisma"
 import type { Occurrence } from "@/types/calendar-types"
 import { Task } from "@prisma/client"
 import rrule, { rrulestr } from "rrule"
+import { taskToOccurrence } from '@/lib/occurrence-utils'
 
-interface CreateTaskData {
-  title: string
-  description?: string
-  status?: "TODO" | "IN_PROGRESS" | "DONE"
-  dtstart?: Date
-  rrule?: string
-  startTime?: string
-  endTime?: string
-  priority?: "LOW" | "MEDIUM" | "HIGH"
-  color?: string
+
+
+function expandRecurringEvents(recurringTasks: Task[], windowStart: Date, windowEnd: Date) {
+  const expandedOccurrences: Occurrence[] = []
+  
+  for (const task of recurringTasks) {
+    // Skip events without a start date
+    if (!task.startDate) continue;
+    
+    let str = toICalDateTime(task.startDate) + "\n" + task.rrule
+    let rrule = rrulestr(str)
+    let endDate = windowEnd
+    if (task.endDate) {
+      if (task.endDate < windowEnd) {
+        endDate = new Date(task.endDate)
+      }
+    }
+    let occurrenceDates = rrule.between(windowStart, endDate)
+    
+    occurrenceDates.forEach((occurrenceDate) => {
+      expandedOccurrences.push(taskToOccurrence(task, occurrenceDate))
+    })
+  }
+  
+  return expandedOccurrences
+}
+
+function toICalDateTime(date: Date): string {
+  return date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
 }
 
 export async function GET(request: NextRequest) {
@@ -24,7 +44,7 @@ export async function GET(request: NextRequest) {
     if (!userId) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
-
+    
     const { searchParams } = new URL(request.url)
     const startDate = searchParams.get("startDate")
     const endDate = searchParams.get("endDate")
@@ -38,78 +58,44 @@ export async function GET(request: NextRequest) {
     const rangeEnd = endDate ? new Date(endDate) : defaultEnd
 
     // Fetch all tasks with scheduled dates (both recurring and non-recurring)
-    const singleEvents = await prisma.task.findMany({
+    const singleTasks = await prisma.task.findMany({
       where: {
         userId,
         rrule: null,
-        dtstart: {
+        startDate: {
           gte: rangeStart,
           lte: rangeEnd,
         },
       },
-      orderBy: [{ dtstart: "asc" }, { startTime: "asc" }],
+      orderBy: [{ startDate: "asc" }, { startTime: "asc" }],
     })
-    const recurringEvents = await prisma.task.findMany({
+    const recurringTasks = await prisma.task.findMany({
       where: {
         userId,
         rrule: {
           not: null,
         },
-        dtstart: {
+        startDate: {
           lte: rangeStart,
         },
-
       },
-      orderBy: [{ dtstart: "asc" }, { startTime: "asc" }],
+      orderBy: [{ startDate: "asc" }, { startTime: "asc" }],
     })
-    const expandedRecurringEvents = expandRecurringEvents(recurringEvents, rangeStart, rangeEnd)
-    const allEvents = [...singleEvents, ...expandedRecurringEvents]
-    return NextResponse.json(allEvents)
+
+    // Transform single tasks to occurrences
+    const singleOccurrences = singleTasks.map(task => taskToOccurrence(task, task.startDate!))
+
+    // Expand recurring tasks to occurrences
+    const recurringOccurrences = expandRecurringEvents(recurringTasks, rangeStart, rangeEnd)
+
+    const allOccurrences = [...singleOccurrences, ...recurringOccurrences]
+    return NextResponse.json(allOccurrences)
   } catch (error) {
     console.error("Error fetching tasks:", error)
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred';
     return NextResponse.json({ error: "Internal server error", details: errorMessage }, { status: 500 })
   }
 }
-
-function expandRecurringEvents(recurreingEvents: Task[], windowStart: Date, windowEnd: Date) {
-  const expandedEvents: Occurrence[] = []
-  for (const event of recurreingEvents) {
-    // Skip events without a start date
-    if (!event.dtstart) continue;
-    
-    let str = toICalDateTime(event.dtstart) + "\n" + event.rrule
-    let rrule = rrulestr(str)
-    let endDate = windowEnd
-    if (event.endDate) {
-      if (event.endDate < windowEnd) {
-        endDate = new Date(event.endDate)
-      }
-    }
-    let occurrences = rrule.between(windowStart, endDate)
-    occurrences.map((instance) => {
-      expandedEvents.push({
-        id: event.id,
-        title: event.title,
-        description: event.description || "",
-        startUtc: instance.toISOString(),
-        endUtc: instance.toISOString(),
-        color: event.color,
-        status: event.status,
-        occurrenceType: "RRULE",
-        hasOverride: false,
-        taskId: event.id,
-        goalId: event.goalId || "",
-      })
-    })
-  }
-  return expandedEvents
-}
-
-function toICalDateTime(date: Date): string {
-  return date.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-}
-
 
 export async function POST(request: NextRequest) {
   try {

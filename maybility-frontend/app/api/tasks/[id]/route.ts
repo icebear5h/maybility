@@ -1,18 +1,35 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { TaskStatus, Priority, OccurrenceType } from "@prisma/client"
 
-interface UpdateTaskData {
-  title?: string
-  description?: string
-  status?: "TODO" | "IN_PROGRESS" | "DONE"
-  priority?: "LOW" | "MEDIUM" | "HIGH"
-  dueDate?: string | null
-  scheduledDate?: string | null
-  startTime?: string | null
-  endTime?: string | null
-  estimatedDuration?: number | null
-  color?: string
+interface updateTaskData {
+  id: string,
+  title: string,
+  description: string,
+  status: TaskStatus,
+  priority: Priority,
+  color: string,
+  userId: string,
+  goalId?: string,
+  createdAt?: Date,
+  updatedAt?: Date,
+  timezone?: string,
+  // Discriminator field - determines which type of event this is
+  occurrenceType: OccurrenceType,
+  
+  dtstart?: Date,
+  startTime?: string,
+  endTime?: string,
+
+  
+  // Recurring event fields (only used when eventType = RECURRING)
+  rrule?: string,
+  endDate?: Date,
+
+  // Relations
+  user: string,
+  goal?: string,
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -27,7 +44,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const data: UpdateTaskData = await request.json()
+    const data: updateTaskData = await request.json()
 
     // Get the task and verify ownership
     const task = await prisma.task.findFirst({
@@ -45,20 +62,19 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       updatedAt: new Date(),
     }
 
-    if (data.title !== undefined) updateData.title = data.title
-    if (data.description !== undefined) updateData.description = data.description
-    if (data.status !== undefined) updateData.status = data.status
-    if (data.priority !== undefined) updateData.priority = data.priority
-    if (data.color !== undefined) updateData.color = data.color
-    if (data.estimatedDuration !== undefined) updateData.estimatedDuration = data.estimatedDuration
-    if (data.startTime !== undefined) updateData.startTime = data.startTime
-    if (data.endTime !== undefined) updateData.endTime = data.endTime
+    if (data.title !== null) updateData.title = data.title
+    if (data.description !== null) updateData.description = data.description
+    if (data.status !== null) updateData.status = data.status
+    if (data.priority !== null) updateData.priority = data.priority
+    if (data.color !== null) updateData.color = data.color
+    if (data.startTime !== null) updateData.startTime = data.startTime
+    if (data.endTime !== null) updateData.endTime = data.endTime
     
-    if (data.dueDate !== undefined) {
-      updateData.dueDate = data.dueDate ? new Date(data.dueDate) : null
+    if (data.dtstart !== null) {
+      updateData.dtstart = data.dtstart ? new Date(data.dtstart) : null
     }
-    if (data.scheduledDate !== undefined) {
-      updateData.dtstart = data.scheduledDate ? new Date(data.scheduledDate) : null
+    if (data.rrule !== null) {
+      updateData.rrule = data.rrule
     }
 
     const updatedTask = await prisma.task.update({

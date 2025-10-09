@@ -10,50 +10,9 @@ interface UseCalendarStateProps {
   initialDate?: Date
 }
 
-const dummyEvents: Occurrence[] = [
-  {
-    id: "1",
-    taskId: "task-1",
-    goalId: "goal-1",
-    title: "Team Meeting",
-    description: "Weekly team sync",
-    startUtc: new Date(2024, 11, 19, 10, 0).toISOString(),
-    endUtc: new Date(2024, 11, 19, 11, 0).toISOString(),
-    color: "#3b82f6",
-    status: "TODO",
-    occurrenceType: "SINGLE",
-    hasOverride: false,
-  },
-  {
-    id: "2",
-    taskId: "task-2",
-    goalId: "goal-2",
-    title: "Project Review",
-    description: "Review project progress",
-    startUtc: new Date(2024, 11, 19, 14, 0).toISOString(),
-    endUtc: new Date(2024, 11, 19, 16, 0).toISOString(),
-    color: "#ef4444",
-    status: "TODO",
-    occurrenceType: "SINGLE",
-    hasOverride: false,
-  },
-  {
-    id: "3",
-    taskId: "task-3",
-    goalId: "goal-3",
-    title: "Client Call",
-    description: "Call with client about requirements",
-    startUtc: new Date(2024, 11, 20, 9, 0).toISOString(),
-    endUtc: new Date(2024, 11, 20, 10, 30).toISOString(),
-    color: "#10b981",
-    status: "TODO",
-    occurrenceType: "SINGLE",
-    hasOverride: false,
-  },
-]
 
 export function useCalendarState({
-  initialEvents = dummyEvents,
+  initialEvents = [],
   initialDate = new Date(),
 }: UseCalendarStateProps = {}) {
   const [currentDate, setCurrentDate] = useState(initialDate)
@@ -101,7 +60,9 @@ export function useCalendarState({
     try {
       const res = await fetch(`/api/tasks?startDate=${windowStart.toISOString()}&endDate=${windowEnd.toISOString()}`)
       if (!res.ok && res.status !== 200) throw new Error("Failed to get events")
-      setEvents(await res.json())
+      const fetchedEvents = await res.json()
+      console.log("events", fetchedEvents)
+      setEvents(fetchedEvents)
     } catch (e) {
       console.error("Failed to get events:", e)
       alert("Failed to get events. Please try again.")
@@ -179,14 +140,16 @@ export function useCalendarState({
   
       const newTask = await response.json();
   
-      // Create the event with the actual task data
+      // Create the event with the actual task data using new structure
       const newEvent: Occurrence = {
-        id: newTask.id,
-        goalId: "",
+        id: `${newTask.id}-${eventData.date}`,
+        taskId: newTask.id,
+        goalId: newTask.goalId || "",
         title: newTask.title,
         description: newTask.description || '',
-        startUtc: startDate.toISOString(),
-        endUtc: endDate.toISOString(),
+        date: new Date(eventData.date),
+        startTime: eventData.startTime,
+        endTime: eventData.endTime,
         color: newTask.color || '#3b82f6',
         status: newTask.status || 'TODO',
         occurrenceType: 'SINGLE',

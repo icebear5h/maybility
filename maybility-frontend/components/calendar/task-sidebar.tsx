@@ -85,16 +85,10 @@ function DraggableTaskItem({
           <div className="task-text" onDoubleClick={() => setIsEditing(true)}>
             <span className="task-title">{task.title}</span>
             <div className="task-meta">
-              {task.scheduledDate && (
+              {task.startDate && (
                 <div className="task-scheduled">
                   <Calendar className="h-3 w-3" />
-                  <span>{format(new Date(task.scheduledDate), "MMM d")}</span>
-                </div>
-              )}
-              {task.estimatedDuration && (
-                <div className="task-duration">
-                  <Clock className="h-3 w-3" />
-                  <span>{Math.round(task.estimatedDuration / 60)}h</span>
+                  <span>{format(new Date(task.startDate), "MMM d")}</span>
                 </div>
               )}
             </div>
@@ -138,8 +132,8 @@ export function TaskSidebar({ tasks, onAddTask, onToggleTask, onDeleteTask, onUp
   }
 
   // Filter tasks into different categories
-  const unscheduledTasks = tasks.filter((task) => task.status !== "DONE" && !task.scheduledDate)
-  const scheduledTasks = tasks.filter((task) => task.status !== "DONE" && task.scheduledDate)
+  const unscheduledTasks = tasks.filter((task) => task.status !== "DONE" && !task.startDate)
+  const scheduledTasks = tasks.filter((task) => task.status !== "DONE" && task.startDate)
   const completedTasks = tasks.filter((task) => task.status === "DONE")
 
   if (isCollapsed) {

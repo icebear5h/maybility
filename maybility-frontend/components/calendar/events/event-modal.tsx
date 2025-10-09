@@ -5,6 +5,7 @@ import { X, Trash2, Save } from "lucide-react"
 import type { Occurrence, RecurrenceConfig, RecurrenceEditType } from "@/types/calendar-types"
 import { RecurrenceConfig as RecurrenceConfigComponent } from "@/components/calendar/rrule/recurrence-config"
 import { RecurrenceEditModal } from "@/components/calendar/rrule/recurrence-edit-modal"
+import { occurrenceToTaskUpdate } from "@/lib/occurrence-utils"
 
 interface EventModalProps {
   isOpen: boolean
@@ -26,8 +27,8 @@ interface EventModalProps {
     occurrenceType?: "SINGLE" | "RRULE"
   }) => void
   event?: Occurrence | null
-  onUpdate?: (eventId: string, updates: Partial<Occurrence>, editType?: RecurrenceEditType) => void
-  onDelete?: (eventId: string, editType?: RecurrenceEditType) => void
+  onUpdate?: (taskId: string, updates: any, editType?: RecurrenceEditType) => void
+  onDelete?: (taskId: string, editType?: RecurrenceEditType) => void
 }
 
 export function EventModal({
@@ -69,15 +70,9 @@ export function EventModal({
         // TODO: Parse existing rrule back to config if needed
       }
 
-      const startDate = new Date(event.startUtc)
-      const endDate = new Date(event.endUtc)
-
-      if (!isNaN(startDate.getTime())) {
-        setNewEventStartTime(startDate.toTimeString().slice(0, 5))
-      }
-      if (!isNaN(endDate.getTime())) {
-        setNewEventEndTime(endDate.toTimeString().slice(0, 5))
-      }
+      // Use the new date/startTime/endTime structure
+      setNewEventStartTime(event.startTime)
+      setNewEventEndTime(event.endTime)
     } else if (!isEditing) {
       setDescription("")
       setIsRecurring(false)
@@ -123,19 +118,19 @@ export function EventModal({
     }
 
     if (isEditing && event && onUpdate) {
-      const startDateTime = new Date(`${startDate}T${validStartTime}:00`)
-      const endDateTime = new Date(`${startDate}T${finalEndTime}:00`)
-
-      const updates: Partial<Occurrence> = {
+      const occurrenceUpdates: Partial<Occurrence> = {
         title: title,
         description: description,
-        startUtc: startDateTime.toISOString(),
-        endUtc: endDateTime.toISOString(),
+        date: new Date(startDate),
+        startTime: validStartTime,
+        endTime: finalEndTime,
         occurrenceType: isRecurring ? "RRULE" : "SINGLE",
         rrule: isRecurring ? rruleString : undefined,
       }
 
-      onUpdate(event.id, updates)
+      // Convert Occurrence updates to Task updates for API
+      const taskUpdates = occurrenceToTaskUpdate(occurrenceUpdates)
+      onUpdate(event.taskId || event.id, taskUpdates)
     } else if (!isEditing) {
       onCreateEvent({
         title: title,
@@ -160,7 +155,7 @@ export function EventModal({
 
     // Original delete logic for non-recurring events
     if (isEditing && event && onDelete) {
-      onDelete(event.id)
+      onDelete(event.taskId || event.id)
       onClose()
     }
   }
@@ -193,21 +188,21 @@ export function EventModal({
         }
       }
 
-      const startDateTime = new Date(`${startDate}T${validStartTime}:00`)
-      const endDateTime = new Date(`${startDate}T${finalEndTime}:00`)
-
-      const updates: Partial<Occurrence> = {
+      const occurrenceUpdates: Partial<Occurrence> = {
         title: title,
         description: description,
-        startUtc: startDateTime.toISOString(),
-        endUtc: endDateTime.toISOString(),
+        date: new Date(startDate),
+        startTime: validStartTime,
+        endTime: finalEndTime,
         occurrenceType: isRecurring ? "RRULE" : "SINGLE",
         rrule: isRecurring ? rruleString : undefined,
       }
 
-      onUpdate(event.id, updates, editType)
+      // Convert Occurrence updates to Task updates for API
+      const taskUpdates = occurrenceToTaskUpdate(occurrenceUpdates)
+      onUpdate(event.taskId || event.id, taskUpdates, editType)
     } else if (pendingAction === "delete" && onDelete) {
-      onDelete(event.id, editType)
+      onDelete(event.taskId || event.id, editType)
     }
 
     setPendingAction(null)
