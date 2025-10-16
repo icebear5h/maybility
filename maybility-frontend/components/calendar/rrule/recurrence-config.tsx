@@ -81,9 +81,14 @@ export function RecurrenceConfig({
       }
 
       const rule = new RRule(ruleOptions)
-      onRRuleChange(rule.toString())
+      const rruleString = rule.toString()
+      console.log("[RecurrenceConfig] RRule object:", rule)
+      console.log("[RecurrenceConfig] rule.toString():", rruleString)
+      console.log("[RecurrenceConfig] typeof rruleString:", typeof rruleString)
+      console.log("[RecurrenceConfig] rruleString length:", rruleString?.length)
+      onRRuleChange(rruleString)
     } catch (error) {
-      console.error("Error generating RRule:", error)
+      console.error("[RecurrenceConfig] Error generating RRule:", error)
     }
   }, [config, startDate, onRRuleChange])
 

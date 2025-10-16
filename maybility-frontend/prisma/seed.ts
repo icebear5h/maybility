@@ -142,7 +142,7 @@ Concept: A minimalist habit tracking app that focuses on simplicity and motivati
     prisma.task.create({
       data: {
         title: "Team Meeting",
-        scheduledDate: new Date("2025-08-04"),
+        dateStart: new Date("2025-08-04"),
         startTime: "09:00",
         endTime: "10:30",
         color: "#1e40af",
@@ -152,7 +152,7 @@ Concept: A minimalist habit tracking app that focuses on simplicity and motivati
     prisma.task.create({
       data: {
         title: "Project Review",
-        scheduledDate: new Date("2025-08-06"),
+        dateStart: new Date("2025-08-06"),
         startTime: "14:15",
         endTime: "15:45",
         color: "#16a34a",
@@ -162,7 +162,7 @@ Concept: A minimalist habit tracking app that focuses on simplicity and motivati
     prisma.task.create({
       data: {
         title: "Client Call",
-        scheduledDate: new Date("2025-08-06"),
+        dateStart: new Date("2025-08-06"),
         startTime: "16:30",
         endTime: "17:00",
         color: "#dc2626",

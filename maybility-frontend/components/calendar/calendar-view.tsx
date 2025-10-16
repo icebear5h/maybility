@@ -1,14 +1,15 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { DndContext, type DragEndEvent, DragOverlay, type DragStartEvent } from "@dnd-kit/core"
+import { DndContext, type DragEndEvent, DragOverlay, type DragStartEvent, MouseSensor, useSensor, useSensors } from "@dnd-kit/core"
 import { TaskSidebar } from "@/components/calendar/task-sidebar"
 import { WeekAndDayView } from "@/components/calendar/day-based/week-and-day-view"
 import { MonthView } from "@/components/calendar/months/month-view"
 import { CalendarNavigation } from "@/components/calendar/calendar-navigation"
 import { EventModal } from "@/components/calendar/events/event-modal"
+import { RecurrenceEditModal } from "@/components/calendar/rrule/recurrence-edit-modal"
 import { useCalendarState } from "@/hooks/use-calendar-state"
-import type { Occurrence } from "@/types/calendar-types"
+import type { Occurrence, RecurrenceEditType } from "@/types/calendar-types"
 import type { Task } from "@/types/task-types"
 
 const CalendarView = () => {
@@ -17,12 +18,27 @@ const CalendarView = () => {
   const [tasks, setTasks] = useState<Task[]>([])
   const [draggedTask, setDraggedTask] = useState<Task | null>(null)
   const containerRefs = useRef<{ [key: string]: HTMLDivElement | null }>({})
+  
+  // Recurring event edit modal state
+  const [showRecurrenceEditModal, setShowRecurrenceEditModal] = useState(false)
+  const [pendingDragUpdate, setPendingDragUpdate] = useState<{
+    event: Occurrence
+    updates: any
+  } | null>(null)
 
   // Use custom hooks for state management
   const calendarState = useCalendarState({
     initialEvents: [] as Occurrence[],
     initialDate: new Date(),
   })
+
+  // Configure dnd-kit sensors with activation constraints
+  const mouseSensor = useSensor(MouseSensor, {
+    activationConstraint: {
+      distance: 5, // Require 5px movement before drag activates
+    },
+  })
+  const sensors = useSensors(mouseSensor)
 
   const handleAddTask = async (title: string) => {
     try {
@@ -52,24 +68,8 @@ const CalendarView = () => {
       // Only update the UI after successful API response
       setTasks((prev) => [...prev, newTask])
 
-      // If the task has a scheduled date, also create an event
-      if (newTask.dtstart) {
-        const newEvent: Occurrence = {
-          id: `temp-${Date.now()}`,
-          taskId: newTask.id,
-          title: newTask.title,
-          description: newTask.description,
-          date: new Date(newTask.dtstart),
-          startTime: newTask.startTime || "09:00",
-          endTime: newTask.endTime || "10:00",
-          color: newTask.color || "#3b82f6",
-          status: (newTask.status as "TODO" | "IN_PROGRESS" | "DONE") || "TODO",
-          goalId: newTask.goalId || "",
-          occurrenceType: "SINGLE",
-          hasOverride: false,
-        }
-        calendarState.setEvents((prev) => [...prev, newEvent])
-      }
+      // Event is already added to state via smart update in handleCreateEvent
+      // No need to refetch!
     } catch (error) {
       console.error("Failed to create task:", error)
       setError("Failed to create task. Please try again.")
@@ -116,7 +116,7 @@ const CalendarView = () => {
     }
   }
 
-  // Fetch initial data
+  // Fetch initial data (month only)
   useEffect(() => {
     const loadInitialData = async () => {
       try {
@@ -178,8 +178,11 @@ const CalendarView = () => {
 
       let newStartTimeStr: string
       let newEndTimeStr: string
-      let newScheduledDate: string
+      let newdateStart: string
+      
+      // Get date string in local timezone (YYYY-MM-DD) without UTC conversion
       const eventDate = event.date instanceof Date ? event.date : new Date(event.date)
+      const eventDateString = `${eventDate.getFullYear()}-${String(eventDate.getMonth() + 1).padStart(2, '0')}-${String(eventDate.getDate()).padStart(2, '0')}`
 
       if (dragType === "start") {
         // Only change start time
@@ -188,7 +191,7 @@ const CalendarView = () => {
         const newStartMins = newStartMinutes % 60
         newStartTimeStr = `${newStartHours.toString().padStart(2, "0")}:${newStartMins.toString().padStart(2, "0")}`
         newEndTimeStr = event.endTime
-        newScheduledDate = eventDate.toISOString().split("T")[0]
+        newdateStart = eventDateString // Use local date string
       } else if (dragType === "end") {
         // Only change end time
         const newEndMinutes = snapToFiveMinutes(Math.max(0, Math.min(1439, endMinutes + deltaMinutes)))
@@ -196,11 +199,17 @@ const CalendarView = () => {
         const newEndMins = newEndMinutes % 60
         newStartTimeStr = event.startTime
         newEndTimeStr = `${newEndHours.toString().padStart(2, "0")}:${newEndMins.toString().padStart(2, "0")}`
-        newScheduledDate = eventDate.toISOString().split("T")[0]
+        newdateStart = eventDateString // Use local date string
       } else {
         // Move entire event
         if (newDate) {
-          // Moving to a different date
+          // Moving to a different date - use the newDate directly (already in YYYY-MM-DD format)
+          console.log("[handleEventDrag] Cross-day drag detected:", {
+            originalDate: eventDate,
+            newDate,
+            deltaMinutes
+          })
+          
           const newStartMinutes = snapToFiveMinutes(Math.max(0, Math.min(1439, startMinutes + deltaMinutes)))
           const newStartHours = Math.floor(newStartMinutes / 60)
           const newStartMins = newStartMinutes % 60
@@ -210,7 +219,7 @@ const CalendarView = () => {
           const newEndHours = Math.floor(newEndMinutes / 60)
           const newEndMins = newEndMinutes % 60
           newEndTimeStr = `${newEndHours.toString().padStart(2, "0")}:${newEndMins.toString().padStart(2, "0")}`
-          newScheduledDate = newDate
+          newdateStart = newDate // Use newDate directly, don't convert
         } else {
           // Moving within the same day
           const newStartMinutes = snapToFiveMinutes(Math.max(0, Math.min(1439, startMinutes + deltaMinutes)))
@@ -222,37 +231,77 @@ const CalendarView = () => {
           const newEndHours = Math.floor(newEndMinutes / 60)
           const newEndMins = newEndMinutes % 60
           newEndTimeStr = `${newEndHours.toString().padStart(2, "0")}:${newEndMins.toString().padStart(2, "0")}`
-          newScheduledDate = eventDate.toISOString().split("T")[0]
+          newdateStart = eventDateString // Use local date string
         }
       }
 
       if (isComplete) {
         console.log("[v0] Drag completed - making API call with final values")
+        console.log("[v0] Date string before API call:", newdateStart)
 
         // Update the event via API using taskId
+        // Send date string directly to avoid timezone conversion issues
         const updates = {
-          scheduledDate: newScheduledDate,
+          startDate: newdateStart,
           startTime: newStartTimeStr,
           endTime: newEndTimeStr,
         }
 
+        // Check if this is a recurring event - prompt user
+        console.log("[handleEventDrag] Full event object:", event)
+        console.log("[handleEventDrag] event.source type:", typeof event.source)
+        console.log("[handleEventDrag] event.source value:", event.source)
+        console.log("[handleEventDrag] Checking if recurring:", {
+          source: event.source,
+          sourceString: String(event.source),
+          isRRule: event.source === "RRULE",
+          isOverride: event.source === "OVERRIDE",
+          willShowModal: event.source === "RRULE",
+          hasRRule: !!event.rrule,
+          seriesId: event.seriesId
+        })
+        
+        console.log("[handleEventDrag] About to check condition...")
+        if (event.source === "RRULE") {
+          console.log("[handleEventDrag] ✅ CONDITION MET - Showing recurrence edit modal")
+          console.log("[handleEventDrag] Current showRecurrenceEditModal:", showRecurrenceEditModal)
+          setPendingDragUpdate({ event, updates })
+          setShowRecurrenceEditModal(true)
+          console.log("[handleEventDrag] Set showRecurrenceEditModal to true")
+          console.log("[handleEventDrag] pendingDragUpdate set to:", { event: event.id, updates })
+          return
+        } else {
+        }
+
         console.log("[v0] Updated event via API:", event.taskId || event.id, updates)
         await calendarState.handleUpdateEvent(event.taskId || event.id, updates)
+        // handleUpdateEvent will update the state from the API response
+      } else {
+        // Optimistic update during drag (not complete yet)
+        // Parse date string in local timezone (YYYY-MM-DD)
+        const [year, month, day] = newdateStart.split('-').map(Number)
+        const localDate = new Date(year, month - 1, day)
+        
+        console.log("[handleEventDrag] Optimistic update - event.id:", event.id)
+        
+        calendarState.setEvents((prev) => {
+          const updated = prev.map((e) => {
+            const matches = e.id === event.id
+            if (matches) {
+              console.log("[handleEventDrag] Updating occurrence:", e.id)
+            }
+            return matches
+              ? {
+                  ...e,
+                  date: localDate,
+                  startTime: newStartTimeStr,
+                  endTime: newEndTimeStr,
+                }
+              : e
+          })
+          return updated
+        })
       }
-
-      // Update the local event state immediately for smooth UX
-      calendarState.setEvents((prev) =>
-        prev.map((e) =>
-          e.id === event.id
-            ? {
-                ...e,
-                date: new Date(newScheduledDate),
-                startTime: newStartTimeStr,
-                endTime: newEndTimeStr,
-              }
-            : e,
-        ),
-      )
     } catch (error) {
       console.error("Failed to update event:", error)
       alert("Failed to update event. Please try again.")
@@ -316,6 +365,7 @@ const CalendarView = () => {
         targetDate,
         eventId: draggedEvent.id,
         taskId: draggedEvent.taskId,
+        occurrenceType: draggedEvent.source,
       })
 
       if (sourceDate !== targetDate) {
@@ -323,14 +373,49 @@ const CalendarView = () => {
         const startTime = draggedEvent.startTime
         const endTime = draggedEvent.endTime
 
-        // OPTIMISTIC UPDATE: Update UI immediately for smooth UX
+        // Make API call in background
+        // Send date string directly to avoid timezone conversion issues
+        const updates = {
+          startDate: targetDate,
+          startTime: startTime,
+          endTime: endTime,
+        }
+
+        console.log("[v0] Updating event via API:", draggedEvent.taskId || draggedEvent.id, updates)
+
+        // Check if this is a recurring event - prompt user BEFORE optimistic update
+        console.log("[handleDragEnd] Checking if recurring:", {
+          source: draggedEvent.source,
+          isRRule: draggedEvent.source === "RRULE",
+          isOverride: draggedEvent.source === "OVERRIDE",
+        })
+        
+        if (draggedEvent.source === "RRULE") {
+          console.log("[handleDragEnd] ✅ Recurring event detected - showing modal (NO optimistic update)")
+          setPendingDragUpdate({ event: draggedEvent, updates })
+          setShowRecurrenceEditModal(true)
+          return
+        }
+
+        // OPTIMISTIC UPDATE: Only for single events
         const originalEvent = { ...draggedEvent }
+        // Parse date correctly to avoid timezone shift (YYYY-MM-DD -> local date at midnight)
+        const [year, month, day] = targetDate.split('-').map(Number)
+        const targetDateObj = new Date(year, month - 1, day)
+        
+        console.log("[CalendarView] Optimistic update (single event only):", {
+          targetDate,
+          targetDateObj,
+          parsed: { year, month, day },
+          formatted: targetDateObj.toISOString().split('T')[0]
+        })
+        
         calendarState.setEvents((prev) =>
           prev.map((e) =>
             e.id === draggedEvent.id
               ? {
                   ...e,
-                  date: new Date(targetDate),
+                  date: targetDateObj,
                   startTime: startTime,
                   endTime: endTime,
                 }
@@ -338,31 +423,33 @@ const CalendarView = () => {
           ),
         )
 
-        // Make API call in background
-        const updates = {
-          scheduledDate: targetDate,
-          startTime: startTime,
-          endTime: endTime,
-        }
+        // API call happens asynchronously
+        // handleUpdateEvent now updates the event in state with the API response
+        const updatePayload =
+          draggedEvent.source === "OVERRIDE"
+            ? {
+                ...updates,
+                editType: "this" as RecurrenceEditType,
+                occurrenceKey: draggedEvent.occurrenceKey,
+              }
+            : updates
 
-        console.log("[v0] Updating event via API (optimistic):", draggedEvent.taskId || draggedEvent.id, updates)
+        calendarState.handleUpdateEvent(draggedEvent.taskId || draggedEvent.id, updatePayload)
+          .catch((error) => {
+            console.error("Failed to move event, reverting:", error)
 
-        // API call happens asynchronously - don't await it
-        calendarState.handleUpdateEvent(draggedEvent.taskId || draggedEvent.id, updates).catch((error) => {
-          console.error("Failed to move event, reverting:", error)
+            // REVERT: If API call fails, revert the optimistic update
+            calendarState.setEvents((prev) =>
+              prev.map((e) =>
+                e.id === draggedEvent.id
+                  ? originalEvent // Restore original event
+                  : e,
+              ),
+            )
 
-          // REVERT: If API call fails, revert the optimistic update
-          calendarState.setEvents((prev) =>
-            prev.map((e) =>
-              e.id === draggedEvent.id
-                ? originalEvent // Restore original event
-                : e,
-            ),
-          )
-
-          // Show user-friendly error
-          alert("Failed to move event. The change has been reverted.")
-        })
+            // Show user-friendly error
+            alert("Failed to move event. The change has been reverted.")
+          })
       }
     }
   }
@@ -420,7 +507,7 @@ const CalendarView = () => {
   }
 
   return (
-    <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className="flex gap-5 h-[calc(100vh-120px)]">
         {/* Task Sidebar */}
         <TaskSidebar
@@ -477,8 +564,43 @@ const CalendarView = () => {
               await calendarState.handleDeleteEvent(eventId)
               calendarState.setSelectedEvent(null)
             }}
+            view={calendarState.view}
           />
         )}
+        
+        {/* Recurrence Edit Modal for Drag & Drop */}
+        <RecurrenceEditModal
+          isOpen={showRecurrenceEditModal}
+          onClose={() => {
+            setShowRecurrenceEditModal(false)
+            setPendingDragUpdate(null)
+          }}
+          onConfirm={async (editType: RecurrenceEditType) => {
+            if (pendingDragUpdate) {
+              const event = pendingDragUpdate.event
+              
+              console.log("[RecurrenceModal] Confirming edit:", {
+                editType,
+                eventId: event.taskId || event.id,
+                occurrenceKey: event.occurrenceKey,
+                updates: pendingDragUpdate.updates
+              })
+              
+              await calendarState.handleUpdateEvent(
+                event.taskId || event.id,
+                { 
+                  ...pendingDragUpdate.updates, 
+                  editType,
+                  occurrenceKey: event.occurrenceKey
+                }
+              )
+              setPendingDragUpdate(null)
+            }
+            setShowRecurrenceEditModal(false)
+          }}
+          eventTitle={pendingDragUpdate?.event.title || ""}
+          isDeleting={false}
+        />
       </div>
 
       {/* Drag Overlay */}

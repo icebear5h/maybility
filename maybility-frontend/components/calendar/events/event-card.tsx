@@ -53,11 +53,14 @@ export const EventCard = forwardRef<HTMLDivElement, EventCardProps>(
 
     const handleClick = (e: React.MouseEvent) => {
       e.stopPropagation()
-      if (!hasDraggedRef.current && onEventClick) {
-        console.log("[v0] EventCard clicked - opening modal")
+      
+      // For week/day view (timeBased), check if mouse actually moved
+      // For month view, dnd-kit's activation constraint handles it
+      const wasDragged = timeBased ? hasDraggedRef.current : false
+      
+      if (!wasDragged && onEventClick) {
+        console.log("[EventCard] Click detected - opening modal")
         onEventClick(event)
-      } else if (hasDraggedRef.current) {
-        console.log("[v0] EventCard click prevented - drag detected")
       }
     }
 
@@ -74,8 +77,12 @@ export const EventCard = forwardRef<HTMLDivElement, EventCardProps>(
       finalNewDateRef.current = undefined
 
       // Store the original date for cross-day dragging
+      // Use local date components to avoid timezone conversion
       const eventDate = event.date instanceof Date ? event.date : new Date(event.date)
-      dragStartDate.current = eventDate.toISOString().split("T")[0]
+      const year = eventDate.getFullYear()
+      const month = String(eventDate.getMonth() + 1).padStart(2, '0')
+      const day = String(eventDate.getDate()).padStart(2, '0')
+      dragStartDate.current = `${year}-${month}-${day}`
 
       const handleMouseMove = (moveEvent: MouseEvent) => {
         if (!onEventDrag) return
@@ -94,10 +101,46 @@ export const EventCard = forwardRef<HTMLDivElement, EventCardProps>(
         // For move operations, check if we're dragging to a different day
         let newDate: string | undefined
         if (type === "move") {
+          // Temporarily hide the event to detect the element underneath
+          const originalPointerEvents = eventRef.current?.style.pointerEvents
+          if (eventRef.current) {
+            eventRef.current.style.pointerEvents = 'none'
+          }
+          
           const calendarElement = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY)
           const dayColumn = calendarElement?.closest("[data-day-iso]")
+          
+          // Restore pointer events
+          if (eventRef.current && originalPointerEvents !== undefined) {
+            eventRef.current.style.pointerEvents = originalPointerEvents
+          }
+          
+          // Log every element in the hierarchy to debug
+          let debugElement = calendarElement
+          const hierarchy: string[] = []
+          while (debugElement && hierarchy.length < 10) {
+            const iso = debugElement.getAttribute?.("data-day-iso")
+            hierarchy.push(`${debugElement.tagName}${iso ? `[data-day-iso="${iso}"]` : ''}`)
+            debugElement = debugElement.parentElement
+          }
+          
+          console.log("[EventCard] Drag detection:", {
+            mouseX: moveEvent.clientX,
+            mouseY: moveEvent.clientY,
+            elementFound: !!calendarElement,
+            elementTag: calendarElement?.tagName,
+            dayColumnFound: !!dayColumn,
+            dayColumnIso: dayColumn?.getAttribute("data-day-iso"),
+            originalDate: dragStartDate.current,
+            hierarchy: hierarchy.join(" > ")
+          })
+          
           if (dayColumn) {
             newDate = dayColumn.getAttribute("data-day-iso") || undefined
+            finalNewDateRef.current = newDate
+          } else {
+            // If no day column found, keep the original date
+            newDate = dragStartDate.current
             finalNewDateRef.current = newDate
           }
         }
@@ -108,10 +151,6 @@ export const EventCard = forwardRef<HTMLDivElement, EventCardProps>(
       const handleMouseUp = (upEvent: MouseEvent) => {
         const finalDragType = dragTypeRef.current
 
-        console.log("[v0] Mouse up detected, preparing final call")
-        console.log("[v0] hasDraggedRef.current:", hasDraggedRef.current)
-        console.log("[v0] onEventDrag exists:", !!onEventDrag)
-        console.log("[v0] finalDragType:", finalDragType)
 
         setIsDragging(false)
         setDragType(null)

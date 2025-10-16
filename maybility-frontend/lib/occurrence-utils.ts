@@ -1,59 +1,113 @@
-import type { Occurrence } from "@/types/calendar-types"
+import type { Occurrence, EventFormData } from "@/types/calendar-types"
 import type { Task } from "@prisma/client"
-
+import { DateTime } from 'luxon'
 
 /**
- * Converts Occurrence updates to Task updates for API calls
- * Maps frontend Occurrence fields to backend Task fields
+ * Converts Occurrence to EventFormData for editing
+ * Extracts date/time in the event's timezone
  */
-export function occurrenceToTaskUpdate(occurrence: Partial<Occurrence>): Partial<Task> {
-  const taskUpdate: Partial<Task> = {}
-
-  // Map title and description directly
-  if (occurrence.title !== undefined) taskUpdate.title = occurrence.title
-  if (occurrence.description !== undefined) taskUpdate.description = occurrence.description
-
-  // Map date to scheduledDate (startDate)
-  if (occurrence.date) {
-    const dateObj = occurrence.date instanceof Date ? occurrence.date : new Date(occurrence.date)
-    taskUpdate.startDate = dateObj
+export function occurrenceToFormData(occurrence: Occurrence): EventFormData {
+  // Convert UTC times back to event timezone
+  const startUtc = DateTime.fromJSDate(occurrence.date, { zone: 'utc' })
+  const eventStart = startUtc.setZone(occurrence.timezone)
+  
+  return {
+    title: occurrence.title,
+    description: occurrence.description,
+    date: eventStart.toISODate()!,
+    startTime: occurrence.startTime,
+    endTime: occurrence.endTime,
+    timezone: occurrence.timezone,
+    color: occurrence.color,
+    status: occurrence.status,
+    priority: occurrence.priority,
   }
-
-  // Map time fields directly
-  if (occurrence.startTime !== undefined) taskUpdate.startTime = occurrence.startTime
-  if (occurrence.endTime !== undefined) taskUpdate.endTime = occurrence.endTime
-
-  // Map status
-  if (occurrence.status !== undefined) taskUpdate.status = occurrence.status
-
-  // Map recurrence fields
-  if (occurrence.rrule !== undefined) taskUpdate.rrule = occurrence.rrule
-  if (occurrence.occurrenceType !== undefined) taskUpdate.occurrenceType = occurrence.occurrenceType
-
-  return taskUpdate
 }
 
 /**
- * Converts a Task to an Occurrence for frontend display
- * Generates a unique frontend ID
+ * Converts EventFormData to API request format
+ * This is what gets sent to POST/PATCH endpoints
  */
-export function taskToOccurrence(task: Task, occurrenceDate?: Date): Occurrence {
-  const date = occurrenceDate || task.startDate || new Date()
-  const frontendId = `${task.id}-${date.toISOString()}`
-
+export function formDataToTaskUpdate(formData: EventFormData) {
   return {
-    id: frontendId,
-    taskId: task.id,
-    goalId: task.goalId || "",
-    title: task.title,
-    description: task.description || "",
-    date: date,
-    startTime: task.startTime || "09:00",
-    endTime: task.endTime || "10:00",
-    color: task.color,
-    status: task.status,
-    occurrenceType: task.rrule ? "RRULE" : "SINGLE",
-    hasOverride: false,
-    rrule: task.rrule || undefined,
+    title: formData.title,
+    description: formData.description,
+    date: formData.date,
+    startTime: formData.startTime,
+    endTime: formData.endTime,
+    timezone: formData.timezone,
+    color: formData.color,
+    status: formData.status,
+    priority: formData.priority,
+    isRecurring: formData.isRecurring,
+    rrule: formData.isRecurring ? buildRRule(formData.rruleConfig) : undefined,
   }
+}
+
+/**
+ * Converts Occurrence updates to API request format
+ * Maps frontend Occurrence fields to API fields
+ * 
+ * @deprecated Use formDataToTaskUpdate instead for new code
+ */
+export function occurrenceToTaskUpdate(occurrence: Partial<Occurrence>): any {
+  console.log("[occurrenceToTaskUpdate] Input occurrence:", occurrence)
+  
+  const apiUpdate: any = {}
+
+  // Map title and description directly
+  if (occurrence.title !== undefined) apiUpdate.title = occurrence.title
+  if (occurrence.description !== undefined) apiUpdate.description = occurrence.description
+
+  // Map date - convert Date to YYYY-MM-DD string
+  if (occurrence.date) {
+    const dateObj = occurrence.date instanceof Date ? occurrence.date : new Date(occurrence.date)
+    apiUpdate.date = dateObj.toISOString().split('T')[0]
+  }
+
+  // Map time fields directly
+  if (occurrence.startTime !== undefined) apiUpdate.startTime = occurrence.startTime
+  if (occurrence.endTime !== undefined) apiUpdate.endTime = occurrence.endTime
+
+  // Map timezone
+  if (occurrence.timezone !== undefined) apiUpdate.timezone = occurrence.timezone
+
+  // Map status
+  if (occurrence.status !== undefined) apiUpdate.status = occurrence.status
+
+  // Map color and priority
+  if (occurrence.color !== undefined) apiUpdate.color = occurrence.color
+  if (occurrence.priority !== undefined) apiUpdate.priority = occurrence.priority
+
+  // Map recurrence fields (CRITICAL!)
+  console.log("[occurrenceToTaskUpdate] Checking rrule:", {
+    hasRrule: 'rrule' in occurrence,
+    rruleValue: occurrence.rrule,
+    rruleType: typeof occurrence.rrule
+  })
+  
+  if (occurrence.rrule !== undefined) {
+    apiUpdate.rrule = occurrence.rrule
+    // If rrule is provided, set occurrenceType
+    apiUpdate.occurrenceType = occurrence.rrule ? 'RRULE' : 'SINGLE'
+  }
+
+  console.log("[occurrenceToTaskUpdate] Output apiUpdate:", apiUpdate)
+  return apiUpdate
+}
+
+/**
+ * Builds RRule string from RecurrenceConfig
+ * TODO: Implement full RRule builder
+ */
+function buildRRule(config: any): string | undefined {
+  if (!config) return undefined
+  
+  // Simple implementation - expand this later
+  const parts = [`FREQ=${config.frequency}`]
+  if (config.interval) parts.push(`INTERVAL=${config.interval}`)
+  if (config.count) parts.push(`COUNT=${config.count}`)
+  if (config.until) parts.push(`UNTIL=${config.until}`)
+  
+  return parts.join(';')
 }

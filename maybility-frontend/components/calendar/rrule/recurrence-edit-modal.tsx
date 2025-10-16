@@ -21,7 +21,14 @@ export function RecurrenceEditModal({
 }: RecurrenceEditModalProps) {
   const [selectedOption, setSelectedOption] = useState<RecurrenceEditType>("this")
 
-  if (!isOpen) return null
+  console.log("[RecurrenceEditModal] Render called with isOpen:", isOpen, "eventTitle:", eventTitle)
+  
+  if (!isOpen) {
+    console.log("[RecurrenceEditModal] Not rendering - isOpen is false")
+    return null
+  }
+  
+  console.log("[RecurrenceEditModal] Rendering modal!")
 
   const handleConfirm = () => {
     onConfirm(selectedOption)

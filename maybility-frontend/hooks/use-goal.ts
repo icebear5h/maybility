@@ -10,7 +10,7 @@ type TaskWithDetails = {
   status: TaskStatus
   priority: Priority
   dueDate: Date | null
-  scheduledDate: Date | null
+  dateStart: Date | null
   startTime: string | null
   endTime: string | null
   estimatedDuration: number | null
@@ -20,7 +20,7 @@ type TaskWithDetails = {
   createdAt: Date
   updatedAt: Date
   rrule: string | null
-  dtstart: Date | null
+  startDate: Date | null
   timezone: string
   isMilestone: boolean
 }

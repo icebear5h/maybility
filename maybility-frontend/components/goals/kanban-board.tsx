@@ -19,7 +19,7 @@ type TaskWithDetails = {
   title: string
   status: "TODO" | "IN_PROGRESS" | "DONE"
   dueDate: Date | null
-  scheduledDate: Date | null
+  dateStart: Date | null
   startTime: string | null
   endTime: string | null
   isMilestone: boolean
@@ -228,7 +228,7 @@ export function KanbanBoard({ goal, onRefetch }: KanbanBoardProps) {
                       </Badge>
                     )}
                   </div>
-                  {task.scheduledDate && task.startTime && (
+                  {task.dateStart && task.startTime && (
                     <div className="flex items-center gap-1 text-xs text-black">
                       <Clock className="h-3 w-3" />
                       Scheduled: {task.startTime} - {task.endTime}
@@ -313,7 +313,7 @@ export function KanbanBoard({ goal, onRefetch }: KanbanBoardProps) {
                       Due {formatDistanceToNow(new Date(task.dueDate), { addSuffix: true })}
                     </div>
                   )}
-                  {task.scheduledDate && task.startTime && (
+                  {task.dateStart && task.startTime && (
                     <div className="flex items-center gap-1 text-xs text-black">
                       <Clock className="h-3 w-3" />
                       Scheduled: {task.startTime} - {task.endTime}

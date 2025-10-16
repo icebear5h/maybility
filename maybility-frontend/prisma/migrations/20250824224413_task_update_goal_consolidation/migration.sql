@@ -88,7 +88,7 @@ CREATE TABLE "tasks" (
     "status" "TaskStatus" NOT NULL DEFAULT 'TODO',
     "priority" "Priority" NOT NULL DEFAULT 'MEDIUM',
     "dueDate" TIMESTAMP(3),
-    "scheduledDate" TIMESTAMP(3),
+    "dateStart" TIMESTAMP(3),
     "startTime" TEXT,
     "endTime" TEXT,
     "estimatedDuration" INTEGER,

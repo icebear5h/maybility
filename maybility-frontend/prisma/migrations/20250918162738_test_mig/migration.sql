@@ -3,7 +3,7 @@
 
   - You are about to drop the column `dueDate` on the `tasks` table. All the data in the column will be lost.
   - You are about to drop the column `estimatedDuration` on the `tasks` table. All the data in the column will be lost.
-  - You are about to drop the column `scheduledDate` on the `tasks` table. All the data in the column will be lost.
+  - You are about to drop the column `dateStart` on the `tasks` table. All the data in the column will be lost.
   - Added the required column `date` to the `tasks` table without a default value. This is not possible if the table is not empty.
   - Made the column `startTime` on table `tasks` required. This step will fail if there are existing NULL values in that column.
   - Made the column `endTime` on table `tasks` required. This step will fail if there are existing NULL values in that column.
@@ -15,7 +15,7 @@ CREATE TYPE "public"."OccurrenceType" AS ENUM ('SINGLE', 'RRULE', 'UNSCHEDULED')
 -- AlterTable
 ALTER TABLE "public"."tasks" DROP COLUMN "dueDate",
 DROP COLUMN "estimatedDuration",
-DROP COLUMN "scheduledDate",
+DROP COLUMN "dateStart",
 ADD COLUMN     "date" TIMESTAMP(3) NOT NULL,
 ADD COLUMN     "endDate" TIMESTAMP(3),
 ADD COLUMN     "occurrenceType" "public"."OccurrenceType" NOT NULL DEFAULT 'SINGLE',

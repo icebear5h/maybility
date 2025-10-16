@@ -6,6 +6,8 @@ import type { Occurrence, RecurrenceConfig, RecurrenceEditType } from "@/types/c
 import { RecurrenceConfig as RecurrenceConfigComponent } from "@/components/calendar/rrule/recurrence-config"
 import { RecurrenceEditModal } from "@/components/calendar/rrule/recurrence-edit-modal"
 import { occurrenceToTaskUpdate } from "@/lib/occurrence-utils"
+import { getDefaultEventTimes, ensureValidEndTime } from "@/lib/event-defaults"
+import type { ViewType } from "@/types/calendar-types"
 
 interface EventModalProps {
   isOpen: boolean
@@ -29,6 +31,7 @@ interface EventModalProps {
   event?: Occurrence | null
   onUpdate?: (taskId: string, updates: any, editType?: RecurrenceEditType) => void
   onDelete?: (taskId: string, editType?: RecurrenceEditType) => void
+  view?: ViewType  // Current calendar view for smart defaults
 }
 
 export function EventModal({
@@ -45,6 +48,7 @@ export function EventModal({
   event,
   onUpdate,
   onDelete,
+  view = 'month',
 }: EventModalProps) {
   const isEditing = !!event
   const [description, setDescription] = useState("")
@@ -64,10 +68,12 @@ export function EventModal({
     if (isEditing && event) {
       setNewEventTitle(event.title)
       setDescription(event.description || "")
-      setIsRecurring(event.occurrenceType === "RRULE")
+      setIsRecurring(event.source === "RRULE" || event.source === "OVERRIDE")
+      
+      // Load rrule if it exists
       if (event.rrule) {
         setRRuleString(event.rrule)
-        // TODO: Parse existing rrule back to config if needed
+        // TODO: Parse rrule back to config for UI
       }
 
       // Use the new date/startTime/endTime structure
@@ -78,44 +84,38 @@ export function EventModal({
       setIsRecurring(false)
       setShowRecurrenceConfig(false)
       setRRuleString("")
+      
+      // Set smart defaults if times are empty
+      if (!newEventStartTime || !newEventEndTime) {
+        const defaults = getDefaultEventTimes(view, newEventStartTime)
+        setNewEventStartTime(defaults.startTime)
+        setNewEventEndTime(defaults.endTime)
+      }
     }
-  }, [event, isEditing, setNewEventTitle, setNewEventStartTime, setNewEventEndTime])
+  }, [event, isEditing, view, newEventStartTime, newEventEndTime, setNewEventTitle, setNewEventStartTime, setNewEventEndTime])
 
   if (!isOpen) return null
 
   const handleSave = () => {
-    if (isEditing && event && event.occurrenceType === "RRULE" && onUpdate) {
-      setPendingAction("save")
-      setShowRecurrenceEditModal(true)
-      return
-    }
-
+    console.log("[EventModal] handleSave called:", {
+      isRecurring,
+      rruleString,
+      isEditing,
+      eventSource: event?.source
+    })
+    
     // Original save logic for non-recurring events or new events
     const title = newEventTitle.trim() || "Untitled Event"
     const startDate = selectedDate || new Date().toISOString().split("T")[0]
 
-    // Validate time format
+    // Validate time format and use smart defaults
     const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
-    const validStartTime = timeRegex.test(newEventStartTime) ? newEventStartTime : "09:00"
-    const validEndTime = timeRegex.test(newEventEndTime) ? newEventEndTime : "10:00"
+    const defaults = getDefaultEventTimes(view)
+    const validStartTime = timeRegex.test(newEventStartTime) ? newEventStartTime : defaults.startTime
+    const validEndTime = timeRegex.test(newEventEndTime) ? newEventEndTime : defaults.endTime
 
-    // Ensure end time is after start time
-    const startMinutes =
-      Number.parseInt(validStartTime.split(":")[0]) * 60 + Number.parseInt(validStartTime.split(":")[1])
-    const endMinutes = Number.parseInt(validEndTime.split(":")[0]) * 60 + Number.parseInt(validEndTime.split(":")[1])
-
-    let finalEndTime = validEndTime
-    if (endMinutes <= startMinutes) {
-      const newEndMinutes = startMinutes + 60
-      const newEndHours = Math.floor(newEndMinutes / 60)
-      const newEndMins = newEndMinutes % 60
-
-      if (newEndHours < 24) {
-        finalEndTime = `${newEndHours.toString().padStart(2, "0")}:${newEndMins.toString().padStart(2, "0")}`
-      } else {
-        finalEndTime = "23:59"
-      }
-    }
+    // Ensure end time is after start time (minimum 30 minutes)
+    const finalEndTime = ensureValidEndTime(validStartTime, validEndTime, 30)
 
     if (isEditing && event && onUpdate) {
       const occurrenceUpdates: Partial<Occurrence> = {
@@ -124,30 +124,52 @@ export function EventModal({
         date: new Date(startDate),
         startTime: validStartTime,
         endTime: finalEndTime,
-        occurrenceType: isRecurring ? "RRULE" : "SINGLE",
-        rrule: isRecurring ? rruleString : undefined,
+        timezone: event.timezone,  // Preserve timezone from original event
+        rrule: isRecurring ? rruleString : undefined,  // Pass rrule, occurrenceToTaskUpdate will set occurrenceType
       }
 
+      console.log("[EventModal] Update - occurrenceUpdates:", occurrenceUpdates)
+      
       // Convert Occurrence updates to Task updates for API
       const taskUpdates = occurrenceToTaskUpdate(occurrenceUpdates)
-      onUpdate(event.taskId || event.id, taskUpdates)
+      console.log("[EventModal] Update - taskUpdates after conversion:", taskUpdates)
+      
+      // Check if this is a recurring event AND if recurrence properties changed
+      const isRecurringEvent = event.source === "RRULE" || event.source === "OVERRIDE"
+      const rruleChanged = event.rrule !== (isRecurring ? rruleString : undefined)
+      
+      // If editing recurrence properties, skip prompt and update all
+      if (isRecurringEvent && rruleChanged) {
+        console.log("[EventModal] RRule changed - updating all occurrences")
+        onUpdate(event.seriesId || event.taskId || event.id, { ...taskUpdates, editType: "all" })
+      } else if (isRecurringEvent) {
+        // Other changes to recurring event - show prompt
+        setPendingAction("save")
+        setShowRecurrenceEditModal(true)
+        return
+      } else {
+        // Non-recurring event - just update
+        onUpdate(event.seriesId || event.taskId || event.id, taskUpdates)
+      }
     } else if (!isEditing) {
-      onCreateEvent({
+      const createData = {
         title: title,
         description: description,
         startTime: validStartTime,
         endTime: finalEndTime,
         date: startDate,
         rrule: isRecurring ? rruleString : undefined,
-        occurrenceType: isRecurring ? "RRULE" : "SINGLE",
-      })
+        occurrenceType: (isRecurring ? "RRULE" : "SINGLE") as "SINGLE" | "RRULE",
+      }
+      console.log("[EventModal] Calling onCreateEvent with:", createData)
+      onCreateEvent(createData)
     }
 
     onClose()
   }
 
   const handleDelete = () => {
-    if (isEditing && event && event.occurrenceType === "RRULE" && onDelete) {
+    if (isEditing && event && (event.source === "RRULE" || event.source === "OVERRIDE") && onDelete) {
       setPendingAction("delete")
       setShowRecurrenceEditModal(true)
       return
@@ -194,8 +216,7 @@ export function EventModal({
         date: new Date(startDate),
         startTime: validStartTime,
         endTime: finalEndTime,
-        occurrenceType: isRecurring ? "RRULE" : "SINGLE",
-        rrule: isRecurring ? rruleString : undefined,
+        rrule: isRecurring ? rruleString : undefined,  // Pass rrule, occurrenceToTaskUpdate will set occurrenceType
       }
 
       // Convert Occurrence updates to Task updates for API

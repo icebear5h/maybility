@@ -30,6 +30,9 @@ export function MonthView({
   onEventClick: (event: Occurrence) => void
   containerRefs: React.MutableRefObject<{ [key: string]: HTMLDivElement | null }>
 }) {
+  // console.log("[MonthView] Received events count:", events.length)
+  // console.log("[MonthView] Received events:", events)
+  
   const monthStart = startOfMonth(currentDate)
   const monthEnd = endOfMonth(currentDate)
   const startDate = startOfWeek(monthStart)
@@ -66,11 +69,21 @@ export function MonthView({
       {days.map((day) => {
         const dayString = format(day, "yyyy-MM-dd")
         const dayEvents = events.filter((event) => {
-          if (!event.date) return false
+          if (!event.date) {
+            console.log("[MonthView] Event missing date:", event)
+            return false
+          }
           const eventDate = event.date instanceof Date ? event.date : new Date(event.date)
-          if (isNaN(eventDate.getTime())) return false
+          if (isNaN(eventDate.getTime())) {
+            console.log("[MonthView] Event has invalid date:", event.date)
+            return false
+          }
           const eventLocalDate = format(eventDate, "yyyy-MM-dd")
-          return eventLocalDate === dayString
+          const matches = eventLocalDate === dayString
+          // if (matches) {
+          //   console.log(`[MonthView] Event "${event.title}" matches day ${dayString}`)
+          // }
+          return matches
         })
 
         return (

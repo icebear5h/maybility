@@ -24,6 +24,31 @@ type WeekAndDayViewProps = {
 const HOURS = Array.from({ length: 24 }, (_, i) => i)
 const QUARTER_HOURS = Array.from({ length: 24 * 4 }, (_, i) => i * 15)
 
+function toDayKey(value: Date | string | null | undefined): string | null {
+  if (!value) return null
+  if (value instanceof Date) {
+    const year = value.getFullYear()
+    const month = String(value.getMonth() + 1).padStart(2, "0")
+    const day = String(value.getDate()).padStart(2, "0")
+    return `${year}-${month}-${day}`
+  }
+
+  const trimmed = value.trim()
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed
+  }
+
+  const parsed = new Date(trimmed)
+  if (Number.isNaN(parsed.getTime())) {
+    return null
+  }
+
+  const year = parsed.getFullYear()
+  const month = String(parsed.getMonth() + 1).padStart(2, "0")
+  const day = String(parsed.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
+}
+
 const timeToMinutes = (time: string): number => {
   const [hours, minutes] = time.split(":").map(Number)
   return hours * 60 + minutes
@@ -194,13 +219,23 @@ export function WeekAndDayView({
 
           {/* Day columns grid */}
           <div className={`grid ${daysGridColsClass} flex-1 min-w-0`}>
-            {weekDays.map((day) => {
+            {weekDays.map((day, index) => {
               const dayString = format(day, "yyyy-MM-dd")
+
               const dayEvents = events.filter((event) => {
-                if (!event.date) return false
-                const eventDate = event.date instanceof Date ? event.date : new Date(event.date)
-                if (isNaN(eventDate.getTime())) return false
-                return format(eventDate, "yyyy-MM-dd") === dayString
+                const eventDayKey = toDayKey(event.date)
+                if (!eventDayKey) return false
+                const matches = eventDayKey === dayString
+                if (matches && index === 0) {
+                  console.log('[WeekView] Event matched for day:', {
+                    dayString,
+                    eventDayKey,
+                    eventTitle: event.title,
+                    eventDate: event.date,
+                    eventSource: event.source
+                  })
+                }
+                return matches
               })
 
               return (
