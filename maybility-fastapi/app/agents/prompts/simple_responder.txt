@@ -1,0 +1,7 @@
+Answer the user's question directly and concisely.
+
+Context: {context}
+
+User question: {user_question}
+
+Provide a helpful, direct answer.

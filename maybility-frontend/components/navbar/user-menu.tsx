@@ -1,6 +1,7 @@
 "use client"
 import { Settings, LogOut } from "lucide-react"
 import { signOut } from "next-auth/react"
+import { useRouter } from "next/navigation"
 import type { Session } from "next-auth"
 import { Button } from "@/components/ui/button"
 import {
@@ -18,6 +19,8 @@ type UserMenuProps = {
 }
 
 export function UserMenu({ session }: UserMenuProps) {
+  const router = useRouter()
+
   if (!session?.user) {
     return (
       <Button asChild size="sm">
@@ -27,6 +30,7 @@ export function UserMenu({ session }: UserMenuProps) {
   }
 
   const handleSignOut = () => signOut({ callbackUrl: "/" })
+  const handleSettings = () => router.push("/settings")
   const userInitials = session.user.name
     ? session.user.name.split(" ").map((n) => n[0]).join("").toUpperCase()
     : "U"
@@ -57,7 +61,7 @@ export function UserMenu({ session }: UserMenuProps) {
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem>
+        <DropdownMenuItem onClick={handleSettings}>
           <Settings className="mr-2 h-4 w-4" />
           <span>Settings</span>
         </DropdownMenuItem>

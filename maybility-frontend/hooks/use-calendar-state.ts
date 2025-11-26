@@ -224,7 +224,7 @@ export function useCalendarState({
       
       // Handle payload based on edit type
       if (editType === 'this' && occurrenceKey) {
-        // For override updates: send override data, not direct time updates
+        // For override updates: send time data directly, backend will create override
         const dateField = payload.date || payload.startDate
         
         if (payload.startTime && payload.endTime && dateField) {
@@ -237,30 +237,23 @@ export function useCalendarState({
             throw new Error('Failed to convert times to UTC')
           }
           
-          // Parse occurrenceKey to get originalStart
-          const dateMatch = occurrenceKey.match(/-(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})$/)
-          if (!dateMatch) {
-            throw new Error('Invalid occurrence key format')
-          }
-          const originalStart = new Date(dateMatch[1])
+          // Backend expects startTime/endTime directly for override creation
+          // Keep occurrenceKey so backend knows which occurrence to override
+          payload.startTime = utcStart.toJSDate()
+          payload.endTime = utcEnd.toJSDate()
+          payload.timezone = viewerTz
           
-          // Send as override data
-          payload.overrides = [{
-            originalStart,
-            newStart: utcStart.toJSDate(),
-            newEnd: utcEnd.toJSDate(),
-            title: payload.title,
-            description: payload.description,
-            status: payload.status
-          }]
-          
-          // Remove direct time updates
-          delete payload.startTime
-          delete payload.endTime
+          // Remove date fields but keep occurrenceKey
           delete payload.date
           delete payload.startDate
+          // Keep occurrenceKey - backend needs it!
           
-          console.log("[handleUpdateEvent] Prepared override data:", payload.overrides[0])
+          console.log("[handleUpdateEvent] Prepared override payload:", {
+            occurrenceKey,
+            startTime: payload.startTime,
+            endTime: payload.endTime,
+            timezone: payload.timezone
+          })
         }
       } else {
         // For direct updates: convert times to UTC

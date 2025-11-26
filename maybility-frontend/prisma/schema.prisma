@@ -8,6 +8,11 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+enum CalendarType {
+  GOOGLE
+  INTERNAL
+}
+
 model User {
   id            String    @id @default(cuid())
   name          String?
@@ -17,6 +22,8 @@ model User {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   timezone      String?
+  calendarType  CalendarType @default(INTERNAL)
+  preferences   Json?     // Calendar and general preferences
 
   // Relations
   accounts      Account[]
@@ -122,8 +129,8 @@ model Task {
   updatedAt       DateTime       @updatedAt
   
   // Series definition (source of truth)
-  startTime       DateTime      // UTC instant (seed for recurring, single occurrence for SINGLE)
-  endTime         DateTime      // UTC instant (optional; can calculate from duration if needed)
+  startTime       DateTime?      // UTC instant (seed for recurring, single occurrence for SINGLE)
+  endTime         DateTime?      // UTC instant (optional; can calculate from duration if needed)
   timezone        String?       // IANA timezone (required for RRULE, optional for SINGLE)
   
   // Discriminator field - determines which type of event this is

@@ -221,6 +221,10 @@ export function EventModal({
 
       // Convert Occurrence updates to Task updates for API
       const taskUpdates = occurrenceToTaskUpdate(occurrenceUpdates)
+      // Add occurrenceKey for recurring event edits
+      if (event.occurrenceKey) {
+        taskUpdates.occurrenceKey = event.occurrenceKey
+      }
       onUpdate(event.taskId || event.id, taskUpdates, editType)
     } else if (pendingAction === "delete" && onDelete) {
       onDelete(event.taskId || event.id, editType)

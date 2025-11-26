@@ -141,8 +141,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         // Strategy: End current series at this date, create new series from this date forward
         console.log('[PATCH] Splitting series at:', data.occurrenceKey)
         
-        // Parse occurrenceKey to extract the date (format: "task-1-2024-10-15T09:00")
-        const dateTimePart = data.occurrenceKey.split('-').slice(2).join('-')
+        // Parse occurrenceKey to extract the date (format: "{taskId}-{YYYY-MM-DDTHH:mm}")
+        // The taskId can contain hyphens, so we match the date pattern at the end
+        const dateMatch = data.occurrenceKey.match(/-(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})$/)
+        if (!dateMatch) {
+          return NextResponse.json({ error: "Invalid occurrence key format" }, { status: 400 })
+        }
+        const dateTimePart = dateMatch[1]
         const splitDate = new Date(dateTimePart)
         
         // Update the original task's RRULE to end before the split date

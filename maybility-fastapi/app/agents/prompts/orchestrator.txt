@@ -1,0 +1,8 @@
+Analyze this COMPLEX multi-step request and state the user's goal in one clear sentence.
+
+NOTE: This request requires multiple agents or multiple steps. Simple single-agent queries are handled directly.
+
+Context: {context}
+Messages: {messages}
+
+What is the user's overarching goal that requires coordination across multiple steps or agents?
