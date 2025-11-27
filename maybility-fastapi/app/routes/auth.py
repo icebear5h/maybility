@@ -4,7 +4,7 @@ Authentication routes - Session validation only
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from app.models.schemas import UserResponse
+from app.schemas import UserResponse
 from app.db import get_supabase
 
 router = APIRouter()

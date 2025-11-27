@@ -1,12 +1,40 @@
 import type React from "react"
-import type { Metadata } from "next"
-import { Providers } from "./providers"
+import type { Metadata, Viewport } from "next"
+import { Geist, Geist_Mono } from "next/font/google"
+import { Analytics } from "@vercel/analytics/next"
 import "./globals.css"
 
+const _geist = Geist({ subsets: ["latin"] })
+const _geistMono = Geist_Mono({ subsets: ["latin"] })
+
+// <CHANGE> Updated metadata for Dimensional Journal
 export const metadata: Metadata = {
-  title: "Journal App",
-  description: "A comprehensive journal application.",
-    generator: 'v0.app'
+  title: "Dimensional Journal",
+  description: "Explore your thoughts in 3D semantic space",
+  generator: "v0.app",
+  icons: {
+    icon: [
+      {
+        url: "/icon-light-32x32.png",
+        media: "(prefers-color-scheme: light)",
+      },
+      {
+        url: "/icon-dark-32x32.png",
+        media: "(prefers-color-scheme: dark)",
+      },
+      {
+        url: "/icon.svg",
+        type: "image/svg+xml",
+      },
+    ],
+    apple: "/apple-icon.png",
+  },
+}
+
+export const viewport: Viewport = {
+  themeColor: "#1a1625",
+  width: "device-width",
+  initialScale: 1,
 }
 
 export default function RootLayout({
@@ -15,9 +43,10 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
-      <body>
-        <Providers>{children}</Providers>
+    <html lang="en" className="dark">
+      <body className={`font-sans antialiased`}>
+        {children}
+        <Analytics />
       </body>
     </html>
   )

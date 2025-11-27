@@ -4,14 +4,56 @@ generator client {
 
 datasource db {
   provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
 }
+
+// ============================================================================
+// ENUMS
+// ============================================================================
 
 enum CalendarType {
   GOOGLE
   INTERNAL
 }
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+enum EventStatus {
+  TENTATIVE
+  CONFIRMED
+  CANCELLED
+}
+
+enum EventVisibility {
+  PUBLIC
+  PRIVATE
+  CONFIDENTIAL
+}
+
+enum OccurrenceType {
+  SINGLE      // One-time event
+  RECURRING   // Repeating event (uses RRule)
+}
+
+enum UpdateKind {
+  TASK_COMPLETION
+  REFLECTION
+  MILESTONE
+  EVENT_NOTE
+}
+
+// ============================================================================
+// AUTH MODELS
+// ============================================================================
 
 model User {
   id            String    @id @default(cuid())
@@ -21,18 +63,19 @@ model User {
   image         String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-  timezone      String?
+  timezone      String?   // User's default timezone
   calendarType  CalendarType @default(INTERNAL)
   preferences   Json?     // Calendar and general preferences
 
   // Relations
   accounts      Account[]
   sessions      Session[]
-  journalEntries JournalEntry[]
+  entries       Entry[]
   folders       Folder[]
   tasks         Task[]
-  updates       Update[]
+  events        Event[]
   goals         Goal[]
+  updates       Update[]
 
   @@map("users")
 }
@@ -76,112 +119,201 @@ model VerificationToken {
   @@map("verificationtokens")
 }
 
+// ============================================================================
+// CONTENT MODELS
+// ============================================================================
+
 model Folder {
   id        String   @id @default(cuid())
   name      String
-  parentId  String?  // null for root folders
+  parentId  String?
   userId    String
+  goalId    String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  isRoot    Boolean @default(false)
+  isRoot    Boolean  @default(false)
 
-  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  parent       Folder?  @relation("FolderHierarchy", fields: [parentId], references: [id])
-  children     Folder[] @relation("FolderHierarchy")
-  entries      JournalEntry[]
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent   Folder?  @relation("FolderHierarchy", fields: [parentId], references: [id])
+  children Folder[] @relation("FolderHierarchy")
+  entries  Entry[]
+  goal     Goal?    @relation(fields: [goalId], references: [id], onDelete: Restrict)
 
+  @@unique([userId, parentId, name])
   @@index([userId])
   @@index([parentId])
   @@index([userId, parentId])
-  @@unique([userId, parentId, name])
-
   @@map("folders")
 }
 
-model JournalEntry {
+model Entry {
   id        String   @id @default(cuid())
   title     String
   content   String   @db.Text
   folderId  String
   userId    String
+  goalId    String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  folder Folder        @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folder Folder  @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  goal   Goal?   @relation(fields: [goalId], references: [id], onDelete: Cascade)
 
-  @@map("journal_entries")
   @@index([userId])
   @@index([folderId])
-  @@index([userId, folderId]) 
+  @@index([userId, folderId])
+  @@map("entries")
 }
 
-model Task {
-  id              String         @id @default(cuid())
-  title           String
-  description     String?
-  status          TaskStatus     @default(TODO)
-  priority        Priority       @default(MEDIUM)
-  color           String         @default("#3b82f6")
-  userId          String
-  goalId          String?
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  
-  // Series definition (source of truth)
-  startTime       DateTime?      // UTC instant (seed for recurring, single occurrence for SINGLE)
-  endTime         DateTime?      // UTC instant (optional; can calculate from duration if needed)
-  timezone        String?       // IANA timezone (required for RRULE, optional for SINGLE)
-  
-  // Discriminator field - determines which type of event this is
-  occurrenceType  OccurrenceType @default(SINGLE)
-  
-  // Recurring event fields (only used when occurrenceType = RRULE)
-  rrule           String?       // RRuleSet string (includes RRULE, EXDATE, RDATE, Until what date etc.)
-  
-  // Relations
-  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  goal            Goal?          @relation(fields: [goalId], references: [id], onDelete: Cascade)
-  updates         Update[]
-  exceptions      RecurringException[] @relation("EventExceptions")
-  overrides       RecurringOverride[] @relation("EventOverrides")
+// ============================================================================
+// TASK MODEL - For todo items with completion tracking
+// ============================================================================
 
-  // Add indexes
+model Task {
+  id          String     @id @default(cuid())
+  title       String
+  description String?
+  status      TaskStatus @default(TODO)
+  priority    Priority   @default(MEDIUM)
+  color       String     @default("#3b82f6")
+
+  // Optional soft deadline (not a scheduled time)
+  dueDate     DateTime?
+
+  userId      String
+  goalId      String?
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  completedAt DateTime?
+
+  // Relations
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal    Goal?    @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  updates Update[]
+
   @@index([userId])
+  @@index([goalId])
+  @@index([status])
   @@map("tasks")
 }
 
-// Exception for a specific occurrence (deleted/cancelled)
-model RecurringException {
-  id              String   @id @default(cuid())
-  eventId         String
-  originalStart   DateTime // UTC - which occurrence is excepted
-  isCancelled     Boolean  @default(true)
-  
+// ============================================================================
+// EVENT MODEL - For calendar events with time/location/attendees
+// ============================================================================
+
+model Event {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  location    String?
+  url         String?  // Video call link, etc.
+
+  // Time fields (stored in UTC)
+  startTime   DateTime
+  endTime     DateTime
+  timezone    String   // IANA timezone (e.g., "America/New_York")
+  isAllDay    Boolean  @default(false)
+
+  // Event metadata
+  status      EventStatus     @default(CONFIRMED)
+  visibility  EventVisibility @default(PRIVATE)
+  color       String?
+
+  // Recurrence
+  occurrenceType OccurrenceType @default(SINGLE)
+  rrule          String?        // RRule string for recurring events
+
+  userId      String
+  goalId      String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
   // Relations
-  event           Task     @relation("EventExceptions", fields: [eventId], references: [id], onDelete: Cascade)
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  goal        Goal?                 @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  exceptions  RecurringException[]
+  overrides   RecurringOverride[]
+  attendees   EventAttendee[]
+  reminders   Reminder[]
+  updates     Update[]
+
+  @@index([userId])
+  @@index([goalId])
+  @@index([startTime])
+  @@index([userId, startTime])
+  @@map("events")
+}
+
+// ============================================================================
+// EVENT RECURRENCE MODELS
+// ============================================================================
+
+model RecurringException {
+  id            String   @id @default(cuid())
+  eventId       String
+  originalStart DateTime // UTC timestamp of the occurrence being excepted
+  isCancelled   Boolean  @default(true)
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@unique([eventId, originalStart])
   @@map("recurring_exceptions")
 }
 
-// Override for a specific occurrence (modified)
 model RecurringOverride {
-  id              String   @id @default(cuid())
-  eventId         String
-  originalStart   DateTime // UTC - which occurrence is overridden
-  newStart        DateTime? // UTC
-  newEnd          DateTime? // UTC
-  title           String?
-  description     String?
-  status          TaskStatus?
-  
-  // Relations
-  event           Task     @relation("EventOverrides", fields: [eventId], references: [id], onDelete: Cascade)
+  id            String      @id @default(cuid())
+  eventId       String
+  originalStart DateTime    // UTC timestamp of the occurrence being overridden
+
+  // Overridden values (null = use original)
+  newStart      DateTime?
+  newEnd        DateTime?
+  title         String?
+  description   String?
+  location      String?
+  status        EventStatus?
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
 
   @@unique([eventId, originalStart])
   @@map("recurring_overrides")
 }
+
+// ============================================================================
+// EVENT ATTENDEES & REMINDERS
+// ============================================================================
+
+model EventAttendee {
+  id         String  @id @default(cuid())
+  eventId    String
+  email      String
+  name       String?
+  isOptional Boolean @default(false)
+  hasAccepted Boolean?
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, email])
+  @@map("event_attendees")
+}
+
+model Reminder {
+  id            String   @id @default(cuid())
+  eventId       String
+  minutesBefore Int      // e.g., 15 for 15 minutes before
+  method        String   @default("notification") // notification, email, etc.
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@map("reminders")
+}
+
+// ============================================================================
+// GOAL MODEL
+// ============================================================================
 
 model Goal {
   id               String    @id @default(cuid())
@@ -195,52 +327,39 @@ model Goal {
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
-  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tasks          Task[]          
-  updates        Update[]
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks   Task[]
+  events  Event[]
+  entries Entry[]
+  folders Folder[]
+  updates Update[]
 
-
+  @@index([userId])
   @@map("goals")
 }
 
-
+// ============================================================================
+// UPDATE MODEL - Notes/reflections on tasks, events, goals
+// ============================================================================
 
 model Update {
   id        String     @id @default(cuid())
-  taskId    String?    // Optional - can be standalone updates
-  goalId    String?    // Optional - can be standalone updates
+  taskId    String?
+  eventId   String?
+  goalId    String?
   kind      UpdateKind
-  body      String
+  body      String     @db.Text
   userId    String
   createdAt DateTime   @default(now())
 
-  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  task Task? @relation(fields: [taskId], references: [id], onDelete: SetNull)
-  goal Goal? @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task  Task?  @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  event Event? @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  goal  Goal?  @relation(fields: [goalId], references: [id], onDelete: SetNull)
 
+  @@index([userId])
+  @@index([taskId])
+  @@index([eventId])
+  @@index([goalId])
   @@map("updates")
-}
-
-enum Priority {
-  LOW
-  MEDIUM
-  HIGH
-}
-
-enum TaskStatus {
-  TODO
-  IN_PROGRESS
-  DONE
-}
-
-enum OccurrenceType {
-  SINGLE
-  RRULE
-  UNSCHEDULED
-}
-
-enum UpdateKind {
-  TASK_COMPLETION
-  REFLECTION
-  MILESTONE
 }

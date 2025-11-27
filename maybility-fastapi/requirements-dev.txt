@@ -1,0 +1,27 @@
+# Development dependencies
+-r requirements.txt
+
+# Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0
+pytest-watch>=4.2.0
+httpx>=0.25.0
+faker>=20.0.0
+
+# AI Evals & Monitoring
+langsmith>=0.1.0
+langchain-groq>=0.0.1
+
+# Code Quality
+black>=23.0.0
+ruff>=0.1.0
+mypy>=1.7.0
+pre-commit>=3.5.0
+
+# Logging & TUI
+loguru>=0.7.0
+rich>=13.0.0
+textual>=0.50.0
+textual-dev>=1.0.0

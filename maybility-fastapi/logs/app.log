@@ -1,0 +1,6 @@
+2025-11-26 19:48:59 | INFO     | app.core.logging:setup_logging:109 - Logging configured: level=INFO, file=True, console=True
+2025-11-26 19:48:59 | INFO     | __main__:<module>:10 - Test info message
+2025-11-26 19:48:59 | WARNING  | __main__:<module>:12 - Test warning message
+2025-11-26 19:48:59 | INFO     | __main__:<module>:18 - Testing context logging
+2025-11-26 19:48:59 | INFO     | app.core.logging:log_api_request:152 - GET /api/test - 200 (45.2ms)
+2025-11-26 19:48:59 | INFO     | app.core.logging:log_agent_action:157 - Agent action: test_action | {'test': 'data'}

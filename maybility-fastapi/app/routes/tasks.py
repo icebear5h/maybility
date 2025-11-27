@@ -5,8 +5,8 @@ Task management routes with Supabase dependency injection
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional
 from datetime import datetime
-from app.models.schemas import (
-    TaskCreate, TaskUpdate, TaskResponse, TaskStatus, 
+from app.schemas import (
+    TaskCreate, TaskUpdate, TaskResponse, TaskStatus,
     RecurrenceException, RecurringOverride
 )
 from app.db import get_supabase

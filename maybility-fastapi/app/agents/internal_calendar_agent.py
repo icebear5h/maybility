@@ -8,7 +8,7 @@ from contextvars import ContextVar
 # Load environment variables before initializing ChatGroq models
 load_dotenv()
 try:
-    from .models import (
+    from app.schemas import (
         CreateTaskInput,
         UpdateTaskInput,
         DeleteTaskInput,
@@ -28,7 +28,9 @@ except ImportError:
     CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
     if CURRENT_DIR not in sys.path:
         sys.path.append(CURRENT_DIR)
-    from models import (
+    # Fallback for standalone script execution
+    sys.path.insert(0, os.path.join(CURRENT_DIR, '..', '..'))
+    from app.schemas import (
         CreateTaskInput,
         UpdateTaskInput,
         DeleteTaskInput,
