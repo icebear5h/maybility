@@ -31,31 +31,101 @@ export function TodoSidebar({ tasks, onTasksChange, onDragStart, onDragEnd }: To
   const [newTaskTitle, setNewTaskTitle] = useState("")
   const [showCompleted, setShowCompleted] = useState(false)
   const [draggedTask, setDraggedTask] = useState<string | null>(null)
-  const [isCollapsed, setIsCollapsed] = useState(false)
+  const [isCollapsed, setIsCollapsed] = useState(true)
+  const [isCreating, setIsCreating] = useState(false)
 
-  const incompleteTasks = tasks.filter((t) => !t.completed)
-  const completedTasks = tasks.filter((t) => t.completed)
+  const incompleteTasks = tasks.filter((t) => t.taskStatus !== 'DONE')
+  const completedTasks = tasks.filter((t) => t.taskStatus === 'DONE')
 
-  const handleAddTask = () => {
-    if (!newTaskTitle.trim()) return
+  const handleAddTask = async () => {
+    if (!newTaskTitle.trim() || isCreating) return
 
-    const newTask: Task = {
-      id: `task-${Date.now()}`,
-      title: newTaskTitle.trim(),
-      completed: false,
-      createdAt: new Date(),
+    setIsCreating(true)
+    try {
+      const response = await fetch('/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: newTaskTitle.trim(),
+          taskStatus: 'TODO',
+          priority: 'MEDIUM',
+          color: '#3b82f6',
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to create task')
+      }
+
+      const newTask: Task = await response.json()
+      onTasksChange([newTask, ...tasks])
+      setNewTaskTitle("")
+    } catch (error) {
+      console.error('Error creating task:', error)
+    } finally {
+      setIsCreating(false)
     }
-
-    onTasksChange([newTask, ...tasks])
-    setNewTaskTitle("")
   }
 
-  const handleToggleComplete = (taskId: string) => {
-    onTasksChange(tasks.map((t) => (t.id === taskId ? { ...t, completed: !t.completed } : t)))
+  const handleToggleComplete = async (taskId: string) => {
+    const task = tasks.find((t) => t.id === taskId)
+    if (!task) return
+
+    const newStatus = task.taskStatus === 'DONE' ? 'TODO' : 'DONE'
+    const completedAt = newStatus === 'DONE' ? new Date().toISOString() : null
+
+    // Optimistic update
+    onTasksChange(
+      tasks.map((t) =>
+        t.id === taskId
+          ? { ...t, taskStatus: newStatus, completedAt }
+          : t
+      )
+    )
+
+    try {
+      const response = await fetch(`/api/events/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskStatus: newStatus,
+          completedAt,
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to update task')
+      }
+
+      const updatedTask: Task = await response.json()
+      onTasksChange(tasks.map((t) => (t.id === taskId ? updatedTask : t)))
+    } catch (error) {
+      console.error('Error updating task:', error)
+      // Revert optimistic update
+      onTasksChange(tasks.map((t) => (t.id === taskId ? task : t)))
+    }
   }
 
-  const handleDeleteTask = (taskId: string) => {
+  const handleDeleteTask = async (taskId: string) => {
+    // Optimistic delete
+    const taskToDelete = tasks.find((t) => t.id === taskId)
     onTasksChange(tasks.filter((t) => t.id !== taskId))
+
+    try {
+      const response = await fetch(`/api/events/${taskId}`, {
+        method: 'DELETE',
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to delete task')
+      }
+    } catch (error) {
+      console.error('Error deleting task:', error)
+      // Revert optimistic delete
+      if (taskToDelete) {
+        onTasksChange([...tasks])
+      }
+    }
   }
 
   const handleDragStart = (e: React.DragEvent, task: Task) => {
@@ -71,52 +141,56 @@ export function TodoSidebar({ tasks, onTasksChange, onDragStart, onDragEnd }: To
   }
 
   const getPriorityColor = (priority?: string) => {
-    switch (priority) {
-      case "high":
+    switch (priority?.toUpperCase()) {
+      case "HIGH":
         return "text-red-400"
-      case "medium":
+      case "MEDIUM":
         return "text-yellow-400"
-      case "low":
+      case "LOW":
         return "text-blue-400"
       default:
         return "text-muted-foreground"
     }
   }
 
-  const renderTask = (task: Task) => (
-    <div
-      key={task.id}
-      draggable
-      onDragStart={(e) => handleDragStart(e, task)}
-      onDragEnd={handleDragEnd}
-      className={cn(
-        "group flex items-center gap-2 rounded-lg border border-border/50 bg-card/50 p-2 transition-all",
-        "hover:border-primary/30 hover:bg-card cursor-grab active:cursor-grabbing",
-        draggedTask === task.id && "opacity-50 border-primary",
-      )}
-    >
-      <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+  const renderTask = (task: Task) => {
+    const isCompleted = task.taskStatus === 'DONE'
 
-      <button onClick={() => handleToggleComplete(task.id)} className="shrink-0">
-        {task.completed ? (
-          <CheckCircle2 className="h-5 w-5 text-green-500" />
-        ) : (
-          <Circle className={cn("h-5 w-5", getPriorityColor(task.priority))} />
+    return (
+      <div
+        key={task.id}
+        draggable
+        onDragStart={(e) => handleDragStart(e, task)}
+        onDragEnd={handleDragEnd}
+        className={cn(
+          "group flex items-center gap-2 rounded-lg border border-border/50 bg-card/50 p-2 transition-all",
+          "hover:border-primary/30 hover:bg-card cursor-grab active:cursor-grabbing",
+          draggedTask === task.id && "opacity-50 border-primary",
         )}
-      </button>
-
-      <span className={cn("flex-1 text-sm truncate", task.completed && "line-through text-muted-foreground")}>
-        {task.title}
-      </span>
-
-      <button
-        onClick={() => handleDeleteTask(task.id)}
-        className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
       >
-        <Trash2 className="h-4 w-4 text-muted-foreground hover:text-red-400" />
-      </button>
-    </div>
-  )
+        <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+
+        <button onClick={() => handleToggleComplete(task.id)} className="shrink-0">
+          {isCompleted ? (
+            <CheckCircle2 className="h-5 w-5 text-green-500" />
+          ) : (
+            <Circle className={cn("h-5 w-5", getPriorityColor(task.priority))} />
+          )}
+        </button>
+
+        <span className={cn("flex-1 text-sm truncate", isCompleted && "line-through text-muted-foreground")}>
+          {task.title}
+        </span>
+
+        <button
+          onClick={() => handleDeleteTask(task.id)}
+          className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+        >
+          <Trash2 className="h-4 w-4 text-muted-foreground hover:text-red-400" />
+        </button>
+      </div>
+    )
+  }
 
   if (isCollapsed) {
     return (
@@ -170,7 +244,7 @@ export function TodoSidebar({ tasks, onTasksChange, onDragStart, onDragEnd }: To
             size="icon"
             variant="ghost"
             onClick={handleAddTask}
-            disabled={!newTaskTitle.trim()}
+            disabled={!newTaskTitle.trim() || isCreating}
             className="h-8 w-8 shrink-0"
           >
             <Plus className="h-4 w-4" />

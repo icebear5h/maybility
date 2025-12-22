@@ -1,14 +1,17 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import type { JournalEntry, Folder, Node } from "@/lib/types"
-import CastleView from "./castle-view"
+import CastleView from "./castle/castle-view"
 import { FolderEditor } from "@/components/editor/folder-editor"
+import { useElectronFS } from "@/lib/hooks/useElectronFS"
+import { WorkspaceHeader } from "./file-system/workspace-header"
 
 interface JournalViewProps {
   entries: JournalEntry[]
   folders: Folder[]
   onSelectEntry: (entry: JournalEntry | null) => void
+  onOpenEntry?: (entry: JournalEntry) => void // Opens full editor
   selectedEntry: JournalEntry | null
   onCreateEntry: () => void
   onCreateFolder: (parentId: string | null) => void
@@ -21,6 +24,7 @@ export function JournalView({
   entries,
   folders,
   onSelectEntry,
+  onOpenEntry,
   selectedEntry,
   onCreateEntry,
   onCreateFolder,
@@ -28,6 +32,21 @@ export function JournalView({
   onDeleteFolder,
   onRenameFolder,
 }: JournalViewProps) {
+  // Electron file system integration
+  const {
+    isElectron,
+    currentFolder,
+    nodes: electronNodes,
+    openWorkspaceInFinder,
+    readFile,
+    writeFile,
+    createFolder: createElectronFolder,
+    deletePath,
+    renamePath,
+    refreshFolder,
+    loading: fsLoading,
+  } = useElectronFS()
+
   const [nodes, setNodes] = useState<Node[]>(() => {
     const folderNodes: Node[] = folders.map((f) => ({
       id: f.id,
@@ -57,17 +76,54 @@ export function JournalView({
     return [...folderNodes, ...entryNodes]
   })
 
+  // Use Electron nodes when available
+  useEffect(() => {
+    if (isElectron && electronNodes.length > 0) {
+      setNodes(electronNodes)
+    }
+  }, [isElectron, electronNodes])
+
   const [selectedNode, setSelectedNode] = useState<Node | null>(null)
   const [showFolderEditor, setShowFolderEditor] = useState(false)
   const [folderEditorMode, setFolderEditorMode] = useState<"create" | "rename">("create")
   const [pendingFolderParentId, setPendingFolderParentId] = useState<string | null>(null)
   const [renamingNode, setRenamingNode] = useState<Node | null>(null)
 
-  const handleSelectNode = (node: Node | null) => {
+  const handleSelectNode = async (node: Node | null) => {
     setSelectedNode(node)
+
     if (node?.type === "file") {
-      const entry = entries.find((e) => e.id === node.id)
-      onSelectEntry(entry || null)
+      // If using Electron, read file content
+      if (isElectron && node.path) {
+        const content = await readFile(node.path)
+        if (content !== null) {
+          // Create a temporary entry to display
+          const tempEntry: JournalEntry = {
+            id: node.id,
+            title: node.name,
+            content,
+            createdAt: node.createdAt,
+            updatedAt: node.updatedAt,
+            userId: "local",
+          }
+          // Open full editor if handler provided, otherwise show detail panel
+          if (onOpenEntry) {
+            onOpenEntry(tempEntry)
+          } else {
+            onSelectEntry(tempEntry)
+          }
+        }
+      } else {
+        const entry = entries.find((e) => e.id === node.id)
+        if (entry) {
+          // Open full editor if handler provided, otherwise show detail panel
+          if (onOpenEntry) {
+            onOpenEntry(entry)
+          } else {
+            onSelectEntry(entry)
+          }
+        }
+      }
     } else {
       onSelectEntry(null)
     }
@@ -117,45 +173,6 @@ export function JournalView({
     }
   }
 
-  const handleArchiveNode = (node: Node) => {
-    setNodes((prev) => prev.map((n) => (n.id === node.id ? { ...n, archivedAt: new Date() } : n)))
-  }
-
-  const handleRestoreNode = (node: Node) => {
-    setNodes((prev) => prev.map((n) => (n.id === node.id ? { ...n, archivedAt: null } : n)))
-  }
-
-  const handleRenameNode = (node: Node) => {
-    if (node.type === "folder") {
-      setRenamingNode(node)
-      setFolderEditorMode("rename")
-      setShowFolderEditor(true)
-    } else {
-      const newName = prompt("Enter new name:", node.name)
-      if (newName) {
-        setNodes((prev) => prev.map((n) => (n.id === node.id ? { ...n, name: newName, updatedAt: new Date() } : n)))
-      }
-    }
-  }
-
-  const handleAddParent = (node: Node, parentId: string) => {
-    if (!node.parentIds.includes(parentId)) {
-      setNodes((prev) =>
-        prev.map((n) =>
-          n.id === node.id ? { ...n, parentIds: [...n.parentIds, parentId], updatedAt: new Date() } : n,
-        ),
-      )
-    }
-  }
-
-  const handleRemoveParent = (node: Node, parentId: string) => {
-    setNodes((prev) =>
-      prev.map((n) =>
-        n.id === node.id ? { ...n, parentIds: n.parentIds.filter((id) => id !== parentId), updatedAt: new Date() } : n,
-      ),
-    )
-  }
-
   const handleMoveNode = (node: Node, newParentId: string | null) => {
     if (newParentId !== null) {
       const targetNode = nodes.find((n) => n.id === newParentId)
@@ -171,15 +188,42 @@ export function JournalView({
     )
   }
 
+  const handleUpdateNode = (nodeId: string, updates: { name?: string; description?: string | null }) => {
+    setNodes((prev) =>
+      prev.map((n) =>
+        n.id === nodeId ? { ...n, ...updates, updatedAt: new Date() } : n,
+      ),
+    )
+  }
+
   return (
-    <div className="h-full w-full">
-      <CastleView
-        nodes={nodes}
-        onSelectNode={handleSelectNode}
-        onCreateNode={handleCreateNode}
-        onDeleteNode={handleDeleteNode}
-        onMoveNode={handleMoveNode}
-      />
+    <div className="h-full w-full flex flex-col">
+      {isElectron && (
+        <WorkspaceHeader
+          currentFolder={currentFolder}
+          onOpenInFinder={openWorkspaceInFinder}
+          onRefresh={() => refreshFolder && refreshFolder()}
+          onCreateFile={() => handleCreateNode("file", null)}
+        />
+      )}
+
+      {fsLoading ? (
+        <div className="flex-1 flex items-center justify-center">
+          <p className="text-muted-foreground">Loading workspace...</p>
+        </div>
+      ) : (
+        <div className="flex-1 overflow-hidden">
+          <CastleView
+            nodes={nodes}
+            onSelectNode={handleSelectNode}
+            onCreateNode={handleCreateNode}
+            onDeleteNode={handleDeleteNode}
+            onMoveNode={handleMoveNode}
+            onUpdateNode={handleUpdateNode}
+          />
+        </div>
+      )}
+
       <FolderEditor
         isOpen={showFolderEditor}
         onClose={() => {

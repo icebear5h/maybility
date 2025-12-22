@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
-import { X, Plus, Trash2, Target, ChevronUp, ChevronDown } from "lucide-react"
+import { X, Plus, Trash2, Target, GripVertical } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 interface GoalEditorProps {
@@ -16,15 +16,6 @@ interface GoalEditorProps {
   onSave: (data: Partial<Goal>) => void
   onDelete?: (goal: Goal) => void
 }
-
-const categories = [
-  { id: "career", label: "Career", color: "#6366f1" },
-  { id: "health", label: "Health", color: "#22c55e" },
-  { id: "financial", label: "Financial", color: "#eab308" },
-  { id: "personal", label: "Personal", color: "#ec4899" },
-  { id: "education", label: "Education", color: "#3b82f6" },
-  { id: "relationships", label: "Relationships", color: "#f97316" },
-] as const
 
 const colors = [
   "#ef4444",
@@ -42,72 +33,76 @@ const colors = [
 export function GoalEditor({ goal, isOpen, onClose, onSave, onDelete }: GoalEditorProps) {
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
-  const [category, setCategory] = useState<Goal["category"]>("personal")
+  const [definitionOfDone, setDefinitionOfDone] = useState("")
   const [color, setColor] = useState(colors[0])
-  const [startDate, setStartDate] = useState("")
   const [targetDate, setTargetDate] = useState("")
-  const [stages, setStages] = useState<Stage[]>([])
+  const [stages, setStages] = useState<Omit<Stage, "userId" | "goalId" | "createdAt" | "updatedAt">[]>([])
   const [newStageTitle, setNewStageTitle] = useState("")
 
   useEffect(() => {
     if (goal) {
       setTitle(goal.title)
       setDescription(goal.description || "")
-      setCategory(goal.category)
-      setColor(goal.color)
-      setStartDate(new Date(goal.startDate).toISOString().split("T")[0])
-      setTargetDate(new Date(goal.targetDate).toISOString().split("T")[0])
+      setDefinitionOfDone(goal.definitionOfDone || "")
+      setColor(goal.color || colors[0])
+      setTargetDate(goal.targetDate ? new Date(goal.targetDate).toISOString().split("T")[0] : "")
       setStages(goal.stages || [])
     } else {
       setTitle("")
       setDescription("")
-      setCategory("personal")
+      setDefinitionOfDone("")
       setColor(colors[0])
-      setStartDate(new Date().toISOString().split("T")[0])
-      setTargetDate(new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split("T")[0])
+      setTargetDate("")
       setStages([])
     }
   }, [goal, isOpen])
 
   const handleAddStage = () => {
     if (!newStageTitle.trim()) return
-    const newStage: Stage = {
-      id: `stage-${Date.now()}`,
+    const maxOrder = stages.length > 0 ? Math.max(...stages.map((s) => s.order)) : -1
+    const newStage = {
+      id: `temp-${Date.now()}`,
       title: newStageTitle.trim(),
-      order: stages.length,
-      status: "pending",
+      description: null,
+      targetDate: null,
+      color: null,
+      order: maxOrder + 1,
+      entryPaths: null,
     }
     setStages([...stages, newStage])
     setNewStageTitle("")
   }
 
   const handleRemoveStage = (id: string) => {
-    setStages(stages.filter((s) => s.id !== id).map((s, i) => ({ ...s, order: i })))
+    setStages(stages.filter((s) => s.id !== id))
   }
 
-  const handleMoveStage = (index: number, direction: "up" | "down") => {
+  const handleUpdateStageField = <K extends keyof Stage>(id: string, field: K, value: Stage[K]) => {
+    setStages(stages.map((s) => (s.id === id ? { ...s, [field]: value } : s)))
+  }
+
+  const handleReorderStages = (fromIndex: number, toIndex: number) => {
     const newStages = [...stages]
-    const targetIndex = direction === "up" ? index - 1 : index + 1
-    if (targetIndex < 0 || targetIndex >= stages.length) return
-    ;[newStages[index], newStages[targetIndex]] = [newStages[targetIndex], newStages[index]]
-    setStages(newStages.map((s, i) => ({ ...s, order: i })))
-  }
+    const [removed] = newStages.splice(fromIndex, 1)
+    newStages.splice(toIndex, 0, removed)
 
-  const handleUpdateStageDescription = (id: string, description: string) => {
-    setStages(stages.map((s) => (s.id === id ? { ...s, description } : s)))
+    // Recalculate order values
+    const reorderedStages = newStages.map((stage, index) => ({
+      ...stage,
+      order: index,
+    }))
+    setStages(reorderedStages)
   }
 
   const handleSave = () => {
     onSave({
       id: goal?.id,
       title,
-      description,
-      category,
-      color,
-      startDate: new Date(startDate),
-      targetDate: new Date(targetDate),
-      stages,
-      status: goal?.status || "not-started",
+      description: description || null,
+      definitionOfDone: definitionOfDone || null,
+      color: color || null,
+      targetDate: targetDate ? new Date(targetDate).toISOString() : null,
+      stages: stages.map((s, i) => ({...s, order: i})),
     })
     onClose()
   }
@@ -130,7 +125,6 @@ export function GoalEditor({ goal, isOpen, onClose, onSave, onDelete }: GoalEdit
         </div>
 
         <div className="p-6 space-y-6">
-          {/* Title */}
           <div className="space-y-2">
             <Label>Title</Label>
             <Input
@@ -141,7 +135,6 @@ export function GoalEditor({ goal, isOpen, onClose, onSave, onDelete }: GoalEdit
             />
           </div>
 
-          {/* Description */}
           <div className="space-y-2">
             <Label>Description</Label>
             <Textarea
@@ -152,28 +145,16 @@ export function GoalEditor({ goal, isOpen, onClose, onSave, onDelete }: GoalEdit
             />
           </div>
 
-          {/* Category */}
           <div className="space-y-2">
-            <Label>Category</Label>
-            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-              {categories.map((cat) => (
-                <button
-                  key={cat.id}
-                  onClick={() => setCategory(cat.id)}
-                  className={cn(
-                    "rounded-lg border p-2 sm:p-3 text-center text-xs sm:text-sm transition-all",
-                    category === cat.id
-                      ? "border-primary bg-primary/10 text-primary"
-                      : "border-border hover:border-primary/50",
-                  )}
-                >
-                  {cat.label}
-                </button>
-              ))}
-            </div>
+            <Label>Definition of Done</Label>
+            <Textarea
+              value={definitionOfDone}
+              onChange={(e) => setDefinitionOfDone(e.target.value)}
+              placeholder="How will you know when this goal is complete?"
+              rows={2}
+            />
           </div>
 
-          {/* Color */}
           <div className="space-y-2">
             <Label>Color</Label>
             <div className="flex flex-wrap gap-2">
@@ -191,28 +172,21 @@ export function GoalEditor({ goal, isOpen, onClose, onSave, onDelete }: GoalEdit
             </div>
           </div>
 
-          {/* Dates */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Start Date</Label>
-              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-            </div>
-            <div className="space-y-2">
-              <Label>Target Date</Label>
-              <Input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} />
-            </div>
+          <div className="space-y-2">
+            <Label>Target Date (Optional)</Label>
+            <Input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} />
           </div>
 
           <div className="space-y-3">
-            <Label>Plan Stages</Label>
+            <Label>Stages</Label>
             <p className="text-sm text-muted-foreground">
-              Break down your goal into stages. Each stage can have tasks and entries linked to it.
+              Break down your goal into sequential stages. Each stage can have tasks and journal entries.
             </p>
             <div className="flex gap-2">
               <Input
                 value={newStageTitle}
                 onChange={(e) => setNewStageTitle(e.target.value)}
-                placeholder="Add a stage (e.g., Research, Planning, Execution...)"
+                placeholder="Add a stage..."
                 onKeyDown={(e) => e.key === "Enter" && handleAddStage()}
               />
               <Button variant="outline" onClick={handleAddStage}>
@@ -222,34 +196,21 @@ export function GoalEditor({ goal, isOpen, onClose, onSave, onDelete }: GoalEdit
             <div className="space-y-2">
               {stages.map((stage, index) => (
                 <div key={stage.id} className="flex items-start gap-2 rounded-lg border border-border bg-muted/20 p-3">
-                  <div className="flex flex-col gap-1 pt-1">
-                    <button
-                      onClick={() => handleMoveStage(index, "up")}
-                      disabled={index === 0}
-                      className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+                  <div className="flex items-center gap-2 pt-1">
+                    <GripVertical className="h-4 w-4 text-muted-foreground cursor-grab" />
+                    <div
+                      className="flex items-center justify-center w-6 h-6 rounded-full text-xs font-medium"
+                      style={{ backgroundColor: `${color}30`, color }}
                     >
-                      <ChevronUp className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => handleMoveStage(index, "down")}
-                      disabled={index === stages.length - 1}
-                      className="text-muted-foreground hover:text-foreground disabled:opacity-30"
-                    >
-                      <ChevronDown className="h-4 w-4" />
-                    </button>
-                  </div>
-                  <div
-                    className="flex items-center justify-center w-6 h-6 rounded-full text-xs font-medium mt-1"
-                    style={{ backgroundColor: `${color}30`, color }}
-                  >
-                    {index + 1}
+                      {index + 1}
+                    </div>
                   </div>
                   <div className="flex-1 space-y-2">
                     <div className="font-medium">{stage.title}</div>
                     <Input
                       value={stage.description || ""}
-                      onChange={(e) => handleUpdateStageDescription(stage.id, e.target.value)}
-                      placeholder="What needs to happen in this stage?"
+                      onChange={(e) => handleUpdateStageField(stage.id, "description", e.target.value || null)}
+                      placeholder="Stage description (optional)"
                       className="text-sm"
                     />
                   </div>

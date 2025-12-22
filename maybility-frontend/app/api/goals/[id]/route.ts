@@ -12,7 +12,7 @@ interface UpdateGoalData {
     archived?: boolean
 }
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await getServerSession(authOptions)
     const userId = (session?.user as { id?: string } | undefined)?.id
@@ -20,25 +20,24 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    const { id } = await params
     const goal = await prisma.goal.findFirst({
       where: {
-        id: params.id,
+        id,
         userId: userId,
       },
       include: {
+        stages: {
+          orderBy: {
+            order: "asc",
+          },
+        },
         tasks: {
           orderBy: [{ status: "asc" }, { dueDate: "asc" }, { createdAt: "asc" }],
         },
-        updates: {
-          include: {
-            task: {
-              select: {
-                title: true,
-              },
-            },
-          },
+        events: {
           orderBy: {
-            createdAt: "desc",
+            startTime: "asc",
           },
         },
       },
@@ -55,7 +54,7 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
   }
 }
 
-export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await getServerSession(authOptions)
     const userId = (session?.user as { id?: string } | undefined)?.id
@@ -63,6 +62,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
+    const { id } = await params
     const data: UpdateGoalData = await request.json()
 
     const updateData: any = {
@@ -80,7 +80,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
     const goal = await prisma.goal.updateMany({
       where: {
-        id: params.id,
+        id,
         userId: userId,
       },
       data: updateData,
@@ -91,19 +91,19 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     }
 
     const updatedGoal = await prisma.goal.findUnique({
-      where: { id: params.id },
+      where: { id },
       include: {
-        tasks: true,
-        updates: {
-          include: {
-            task: {
-              select: {
-                title: true,
-              },
-            },
-          },
+        stages: {
           orderBy: {
-            createdAt: "desc",
+            order: "asc",
+          },
+        },
+        tasks: {
+          orderBy: [{ status: "asc" }, { dueDate: "asc" }, { createdAt: "asc" }],
+        },
+        events: {
+          orderBy: {
+            startTime: "asc",
           },
         },
       },
@@ -112,6 +112,33 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     return NextResponse.json(updatedGoal)
   } catch (error) {
     console.error("Error updating goal:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const session = await getServerSession(authOptions)
+    const userId = (session?.user as { id?: string } | undefined)?.id
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    }
+
+    const { id } = await params
+    const result = await prisma.goal.deleteMany({
+      where: {
+        id,
+        userId: userId,
+      },
+    })
+
+    if (result.count === 0) {
+      return NextResponse.json({ error: "Goal not found" }, { status: 404 })
+    }
+
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("Error deleting goal:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

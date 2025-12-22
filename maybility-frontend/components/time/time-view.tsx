@@ -1,30 +1,31 @@
 "use client"
 
 import { useState } from "react"
-import type { JournalEntry, Task, Goal } from "@/lib/types"
+import type { Task, Goal, Event as EventType } from "@/lib/types"
 import type { TimeSubMode } from "@/lib/types"
-import { CalendarView } from "./calendar-view"
-import { TimelineView } from "./timeline-view"
+import { CalendarView } from "./calendar/calendar-view"
+import { TimelineView } from "./timeline/timeline-view"
+import { NowView3D } from "./now-3d/now-view-3d"
 import { cn } from "@/lib/utils"
-import { Calendar, GitBranch } from "lucide-react"
+import { Calendar, GitBranch, Zap } from "lucide-react"
 
 interface TimeViewProps {
-  entries: JournalEntry[]
-  onSelectEntry: (entry: JournalEntry | null) => void
-  onCreateEntry: (date?: Date) => void
+  events: EventType[]
+  onCreateEvent?: (date?: Date) => void
+  onSelectEvent?: (event: EventType) => void
   isDraggingTask?: boolean
   onTaskDrop?: (task: Task, date: Date) => void
-  onUpdateEntry?: (entry: JournalEntry) => void
+  onUpdateEvent?: (event: EventType) => void
   goals?: Goal[]
 }
 
 export function TimeView({
-  entries,
-  onSelectEntry,
-  onCreateEntry,
+  events,
+  onCreateEvent,
+  onSelectEvent,
   isDraggingTask,
   onTaskDrop,
-  onUpdateEntry,
+  onUpdateEvent,
   goals,
 }: TimeViewProps) {
   const [subMode, setSubMode] = useState<TimeSubMode>("calendar")
@@ -58,41 +59,61 @@ export function TimeView({
             <GitBranch className="h-4 w-4" />
             Timeline
           </button>
+          <button
+            onClick={() => setSubMode("now")}
+            className={cn(
+              "flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-medium transition-all",
+              subMode === "now"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <Zap className="h-4 w-4" />
+            Now
+          </button>
         </div>
       </div>
 
       {/* Content */}
       <div className="relative flex-1">
-        <div
-          className={cn(
-            "absolute inset-0 transition-opacity duration-300",
-            subMode === "calendar" ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none",
-          )}
-        >
-          <CalendarView
-            entries={entries}
-            onSelectEntry={onSelectEntry}
-            onCreateEntry={onCreateEntry}
-            isDraggingTask={isDraggingTask}
-            onTaskDrop={onTaskDrop}
-            onUpdateEntry={onUpdateEntry}
-            goals={goals}
-          />
-        </div>
+        {subMode === "calendar" && (
+          <div className="absolute inset-0">
+            <CalendarView
+              events={events}
+              onCreateEvent={onCreateEvent}
+              onSelectEvent={onSelectEvent}
+              isDraggingTask={isDraggingTask}
+              onTaskDrop={onTaskDrop}
+              onUpdateEvent={onUpdateEvent}
+              goals={goals}
+            />
+          </div>
+        )}
 
-        <div
-          className={cn(
-            "absolute inset-0 transition-opacity duration-300",
-            subMode === "timeline" ? "opacity-100 z-10" : "opacity-0 z-0 pointer-events-none",
-          )}
-        >
-          <TimelineView
-            entries={entries}
-            onSelectEntry={onSelectEntry}
-            onCreateEntry={onCreateEntry}
-            onUpdateEntry={onUpdateEntry}
-          />
-        </div>
+        {subMode === "timeline" && (
+          <div className="absolute inset-0">
+            <TimelineView
+              events={events}
+              onSelectEvent={onSelectEvent}
+              onCreateEvent={onCreateEvent}
+              onUpdateEvent={onUpdateEvent}
+              onTaskDrop={onTaskDrop}
+              isDraggingTask={isDraggingTask}
+              goals={goals}
+            />
+          </div>
+        )}
+
+        {subMode === "now" && (
+          <div className="absolute inset-0">
+            <NowView3D
+              events={events}
+              goals={goals}
+              onSelectEvent={onSelectEvent}
+              onUpdateEvent={onUpdateEvent}
+            />
+          </div>
+        )}
       </div>
     </div>
   )

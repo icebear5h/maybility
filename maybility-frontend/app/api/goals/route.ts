@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { auth, authOptions } from "@/lib/auth"
+import { auth } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 
 interface CreateGoalData {
@@ -32,21 +32,19 @@ export async function GET(request: NextRequest) {
     const goals = await prisma.goal.findMany({
       where: whereClause,
       include: {
-        tasks: {
-          select: {
-            id: true,
-            status: true,
-            startDate: true,
+        stages: {
+          orderBy: {
+            order: "asc",
           },
         },
-        updates: {
+        events: {
           select: {
-            createdAt: true,
+            id: true,
+            taskStatus: true,
+            startTime: true,
+            endTime: true,
+            dueDate: true,
           },
-          orderBy: {
-            createdAt: "desc",
-          },
-          take: 1,
         },
       },
       orderBy: { createdAt: "desc" },
@@ -67,15 +65,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Verify user exists in database before proceeding
-    const user = await prisma.user.findUnique({
+    // Ensure user exists in database (auto-create if using JWT sessions without adapter)
+    await prisma.user.upsert({
       where: { id: userId },
-      select: { id: true }
-    });
-
-    if (!user) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 });
-    }
+      update: {},
+      create: {
+        id: userId,
+        email: session?.user?.email ?? "",
+        name: session?.user?.name,
+        image: session?.user?.image,
+      },
+    })
 
     const data: CreateGoalData = await request.json()
 

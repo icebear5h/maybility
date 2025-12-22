@@ -5,7 +5,6 @@ import type React from "react"
 import { useState, useEffect, useRef, useCallback } from "react"
 import type { JournalEntry } from "@/lib/types"
 import { Button } from "@/components/ui/button"
-import { Slider } from "@/components/ui/slider"
 import {
   X,
   Save,
@@ -26,8 +25,6 @@ import {
   Minus,
   Eye,
   Edit3,
-  Sparkles,
-  ChevronDown,
 } from "lucide-react"
 
 interface EntryEditorProps {
@@ -42,11 +39,7 @@ interface EntryEditorProps {
 export function EntryEditor({ entry, isOpen, onClose, onSave, onDelete, initialDate }: EntryEditorProps) {
   const [title, setTitle] = useState("")
   const [content, setContent] = useState("")
-  const [mood, setMood] = useState<number>(0)
-  const [energy, setEnergy] = useState<number>(0)
-  const [clarity, setClarity] = useState<number>(0)
   const [viewMode, setViewMode] = useState<"edit" | "preview" | "split">("edit")
-  const [showSemantics, setShowSemantics] = useState(false)
   const editorRef = useRef<HTMLTextAreaElement>(null)
 
   const isEditing = !!entry
@@ -55,15 +48,9 @@ export function EntryEditor({ entry, isOpen, onClose, onSave, onDelete, initialD
     if (entry) {
       setTitle(entry.title)
       setContent(entry.content || "")
-      setMood(entry.mood ?? 0)
-      setEnergy(entry.energy ?? 0)
-      setClarity(entry.clarity ?? 0)
     } else {
       setTitle("")
       setContent("")
-      setMood(0)
-      setEnergy(0)
-      setClarity(0)
     }
   }, [entry, isOpen])
 
@@ -137,9 +124,6 @@ export function EntryEditor({ entry, isOpen, onClose, onSave, onDelete, initialD
     const data: Partial<JournalEntry> = {
       title: title || "Untitled Entry",
       content,
-      mood,
-      energy,
-      clarity,
     }
 
     if (entry) {
@@ -329,77 +313,6 @@ export function EntryEditor({ entry, isOpen, onClose, onSave, onDelete, initialD
                 className="p-4 prose prose-invert prose-sm max-w-none"
                 dangerouslySetInnerHTML={{ __html: renderMarkdown(content) }}
               />
-            </div>
-          )}
-        </div>
-
-        {/* Semantic sliders (collapsible) */}
-        <div className="border-t border-border/50">
-          <button
-            onClick={() => setShowSemantics(!showSemantics)}
-            className="w-full flex items-center justify-between px-4 py-2 hover:bg-muted/30 transition-colors"
-          >
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Sparkles className="h-4 w-4" />
-              <span>Semantic Position</span>
-              {!showSemantics && (
-                <div className="flex items-center gap-2 ml-2">
-                  <span
-                    className={`w-2 h-2 rounded-full ${mood > 0.3 ? "bg-green-500" : mood < -0.3 ? "bg-red-500" : "bg-gray-500"}`}
-                  />
-                  <span
-                    className={`w-2 h-2 rounded-full ${energy > 0.3 ? "bg-yellow-500" : energy < -0.3 ? "bg-gray-600" : "bg-gray-500"}`}
-                  />
-                  <span
-                    className={`w-2 h-2 rounded-full ${clarity > 0.3 ? "bg-blue-500" : clarity < -0.3 ? "bg-purple-500" : "bg-gray-500"}`}
-                  />
-                </div>
-              )}
-            </div>
-            <ChevronDown
-              className={`h-4 w-4 text-muted-foreground transition-transform ${showSemantics ? "rotate-180" : ""}`}
-            />
-          </button>
-
-          {showSemantics && (
-            <div className="px-4 pb-4 space-y-4">
-              <div className="grid grid-cols-3 gap-6">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium">Mood</span>
-                    <span
-                      className={`text-xs ${mood > 0.3 ? "text-green-400" : mood < -0.3 ? "text-red-400" : "text-muted-foreground"}`}
-                    >
-                      {mood > 0.3 ? "Positive" : mood < -0.3 ? "Negative" : "Neutral"}
-                    </span>
-                  </div>
-                  <Slider value={[mood]} onValueChange={([v]) => setMood(v)} min={-1} max={1} step={0.1} />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium">Energy</span>
-                    <span
-                      className={`text-xs ${energy > 0.3 ? "text-yellow-400" : energy < -0.3 ? "text-muted-foreground" : "text-muted-foreground"}`}
-                    >
-                      {energy > 0.3 ? "High" : energy < -0.3 ? "Low" : "Moderate"}
-                    </span>
-                  </div>
-                  <Slider value={[energy]} onValueChange={([v]) => setEnergy(v)} min={-1} max={1} step={0.1} />
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-medium">Clarity</span>
-                    <span
-                      className={`text-xs ${clarity > 0.3 ? "text-blue-400" : clarity < -0.3 ? "text-muted-foreground" : "text-muted-foreground"}`}
-                    >
-                      {clarity > 0.3 ? "Focused" : clarity < -0.3 ? "Confused" : "Moderate"}
-                    </span>
-                  </div>
-                  <Slider value={[clarity]} onValueChange={([v]) => setClarity(v)} min={-1} max={1} step={0.1} />
-                </div>
-              </div>
             </div>
           )}
         </div>

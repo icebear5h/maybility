@@ -5,12 +5,16 @@ import { getServerSession } from "next-auth";
 import { prisma } from "./prisma";
 import { ensureUserDefaultFolders } from "./ensure-default-folders";
 
+// Disable adapter for now - database tables may not exist
+// Re-enable once migrations are run: PrismaAdapter(prisma)
+const useAdapter = false && (process.env.NODE_ENV === "production" || process.env.DATABASE_URL);
+
 export const authOptions: NextAuthOptions = {
-  adapter: PrismaAdapter(prisma),
+  adapter: useAdapter ? PrismaAdapter(prisma) : undefined,
   providers: [
     GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      clientId: process.env.GOOGLE_CLIENT_ID || "placeholder",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET || "placeholder",
     }),
   ],
   pages: { signIn: "/auth/signin" },
@@ -31,7 +35,8 @@ export const authOptions: NextAuthOptions = {
   },
   events: {
     async createUser({ user }) {
-      if (user?.id) {
+      // Disabled until database is set up
+      if (useAdapter && user?.id) {
         await ensureUserDefaultFolders(user.id)
       }
     },
