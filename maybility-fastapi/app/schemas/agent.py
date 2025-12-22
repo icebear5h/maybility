@@ -11,8 +11,8 @@ class CreateTaskInput(BaseModel):
     """Input schema for creating a task (agent tool)"""
     title: str = Field(description="Task title")
     description: Optional[str] = Field(default=None, description="Task description")
-    priority: Priority = Field(default=Priority.MEDIUM, description="Task priority")
-    color: str = Field(default="#3b82f6", description="Hex color code")
+    priority: Optional[Priority] = Field(default=Priority.MEDIUM, description="Task priority")
+    color: Optional[str] = Field(default="#3b82f6", description="Hex color code")
     goalId: Optional[str] = Field(default=None, description="Associated goal ID")
 
 
@@ -47,10 +47,10 @@ class CreateEventInput(BaseModel):
     startTime: datetime = Field(description="Start time in UTC")
     endTime: datetime = Field(description="End time in UTC")
     timezone: Optional[str] = Field(default=None, description="IANA timezone")
-    occurrenceType: OccurrenceType = Field(default=OccurrenceType.SINGLE, description="Occurrence type")
+    occurrenceType: Optional[OccurrenceType] = Field(default=OccurrenceType.SINGLE, description="Occurrence type")
     rrule: Optional[str] = Field(default=None, description="RRULE string for recurring events")
-    priority: Priority = Field(default=Priority.MEDIUM, description="Event priority")
-    color: str = Field(default="#3b82f6", description="Hex color code")
+    priority: Optional[Priority] = Field(default=Priority.MEDIUM, description="Event priority")
+    color: Optional[str] = Field(default="#3b82f6", description="Hex color code")
     goalId: Optional[str] = Field(default=None, description="Associated goal ID")
 
 

@@ -1,9 +1,12 @@
-from langchain.agents import create_agent
+from langgraph.prebuilt import create_react_agent
 from langchain_groq import ChatGroq
 from langchain_core.tools import tool
 import os
+import logging
 from dotenv import load_dotenv
 from contextvars import ContextVar
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables before initializing ChatGroq models
 load_dotenv()
@@ -48,33 +51,44 @@ except ImportError:
 from datetime import datetime
 from typing import Optional
 import json
+import time
+import random
+import string
 
-# Context variable to hold the per-request Supabase client
-# This allows tools to access the authenticated client for the current user
+
+def generate_cuid():
+    """Generate a cuid-like ID for Prisma compatibility"""
+    timestamp = hex(int(time.time() * 1000))[2:]
+    random_part = ''.join(random.choices(string.ascii_lowercase + string.digits, k=12))
+    return f"c{timestamp}{random_part}"
+
+# Context variables to hold per-request data
+# This allows tools to access the authenticated client and user info
 supabase_context: ContextVar = ContextVar('supabase_context', default=None)
+user_id_context: ContextVar = ContextVar('user_id_context', default=None)
 
-# Import default Supabase client (fallback)
+# Import default Supabase client (fallback - uses service role to bypass RLS)
 default_supabase = None
 try:
-    from app.db import public_client as default_supabase
+    from app.db import service_client as default_supabase
 except ImportError:
     # Fallback: create client directly when running as script
     try:
         from supabase import create_client
         from dotenv import load_dotenv
         import os
-        
+
         # Load environment variables
         env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env')
         load_dotenv(env_path)
-        
+
         url = os.getenv("SUPABASE_URL")
-        key = os.getenv("SUPABASE_ANON_KEY")
-        
+        key = os.getenv("SUPABASE_SERVICE_KEY")  # Use service key to bypass RLS
+
         if url and key:
             default_supabase = create_client(url, key)
         else:
-            print("Warning: SUPABASE_URL or SUPABASE_ANON_KEY not found in environment")
+            print("Warning: SUPABASE_URL or SUPABASE_SERVICE_KEY not found in environment")
     except Exception as e:
         print(f"Warning: Could not create Supabase client: {e}")
 
@@ -82,8 +96,17 @@ def get_supabase():
     """Get the current Supabase client from context or use default"""
     client = supabase_context.get()
     if client is None:
+        logger.debug("[GET_SUPABASE] Context is None, using default_supabase")
         client = default_supabase
+    else:
+        logger.debug("[GET_SUPABASE] Using client from context")
     return client
+
+
+def get_user_id():
+    """Get the current user ID from context"""
+    return user_id_context.get()
+
 
 fastModel = ChatGroq(model = "llama-3.1-8b-instant")
 reasoningModel = ChatGroq(model = "openai/gpt-oss-120b")
@@ -95,41 +118,48 @@ reasoningModel = ChatGroq(model = "openai/gpt-oss-120b")
 def create_task(
     title: str,
     description: Optional[str] = None,
-    priority: Priority = Priority.MEDIUM,
-    color: str = "#3b82f6",
+    priority: Optional[Priority] = None,
+    color: Optional[str] = None,
     goalId: Optional[str] = None
 ) -> dict:
-    """Create a new task/event.
-    
+    """Create an UNSCHEDULED task (no start/end time). Use create_event for scheduled items.
+
     Args:
-        title: Task title
+        title: Task title (required)
         description: Task description
-        startTime: Start time in UTC
-        endTime: End time in UTC
-        timezone: IANA timezone
-        occurrenceType: SINGLE or RRULE
-        rrule: RRULE string for recurring events
-        priority: LOW, MEDIUM, or HIGH
-        color: Hex color code
+        priority: LOW, MEDIUM, or HIGH (default: MEDIUM)
+        color: Hex color code (default: #3b82f6)
         goalId: Associated goal ID
-    
+
     Returns:
         Dict containing the created task data or error information
     """
     try:
+        # Apply defaults for None values
+        actual_priority = priority if priority is not None else Priority.MEDIUM
+        actual_color = color if color is not None else "#3b82f6"
+
+        # Get user ID from context
+        user_id = get_user_id()
+        if not user_id:
+            return {"error": "User ID not available - authentication required", "status": "failed"}
+
         # Create task via Supabase
         task_data = {
+            "id": generate_cuid(),
+            "userId": user_id,
             "title": title,
             "description": description,
-            "priority": priority.value,
-            "color": color,
-            "goalId": goalId
+            "priority": actual_priority.value,
+            "color": actual_color,
+            "goalId": goalId,
+            "updatedAt": datetime.utcnow().isoformat()
         }
-        
+
         supabase = get_supabase()
         if supabase is None:
             return {"error": "Supabase client unavailable", "status": "failed"}
-        result = supabase.table("tasks").insert(task_data).execute()
+        result = supabase.table("events").insert(task_data).execute()
         
         if result.data:
             return {"task": result.data[0], "status": "created"}
@@ -189,7 +219,7 @@ def update_task(
         supabase = get_supabase()
         if supabase is None:
             return {"error": "Supabase client unavailable", "status": "failed"}
-        result = supabase.table("tasks").update(update_data).eq("id", taskId).execute()
+        result = supabase.table("events").update(update_data).eq("id", taskId).execute()
         
         if result.data:
             return {"task": result.data[0], "status": "updated"}
@@ -214,7 +244,7 @@ def delete_task(taskId: str) -> dict:
         supabase = get_supabase()
         if supabase is None:
             return {"error": "Supabase client unavailable", "status": "failed"}
-        result = supabase.table("tasks").delete().eq("id", taskId).execute()
+        result = supabase.table("events").delete().eq("id", taskId).execute()
         
         if result.data:
             return {"task": result.data[0], "status": "deleted"}
@@ -231,20 +261,23 @@ def get_tasks(
     goalId: Optional[str] = None,
     keywords: Optional[list] = None
 ) -> dict:
-    """Retrieve unscheduled tasks (items without startTime and endTime).
-    
-    Note: startTime/endTime filters are ignored for tasks since tasks are, by definition, unscheduled.
-    Other filters (status, priority, goalId, occurrenceType, keywords) still apply.
-    
+    """Retrieve UNSCHEDULED tasks (items without startTime/endTime). Use get_events for scheduled items.
+
+    Args:
+        status: Filter by status (PENDING, IN_PROGRESS, COMPLETED, CANCELLED)
+        priority: Filter by priority (LOW, MEDIUM, HIGH)
+        goalId: Filter by associated goal ID
+        keywords: Search keywords to match in title/description
+
     Returns:
-        Dict containing the search results or error information
+        Dict containing the list of tasks or error information
     """
     try:
         # Build query
         supabase = get_supabase()
         if supabase is None:
             return {"error": "Supabase client unavailable", "status": "failed"}
-        query = supabase.table("tasks").select("*")
+        query = supabase.table("events").select("*")
         
         # Apply filters
         if status:
@@ -282,35 +315,66 @@ def create_event(
     startTime: datetime = None,
     endTime: datetime = None,
     timezone: Optional[str] = None,
-    occurrenceType: OccurrenceType = OccurrenceType.SINGLE,
+    occurrenceType: Optional[OccurrenceType] = None,
     rrule: Optional[str] = None,
-    priority: Priority = Priority.MEDIUM,
-    color: str = "#3b82f6",
+    priority: Optional[Priority] = None,
+    color: Optional[str] = None,
     goalId: Optional[str] = None
 ) -> dict:
+    """Create a SCHEDULED event with start/end time. Use create_task for unscheduled items.
+
+    Args:
+        title: Event title (required)
+        startTime: Start time in UTC (required)
+        endTime: End time in UTC (required)
+        description: Event description
+        timezone: IANA timezone (e.g., America/New_York)
+        occurrenceType: SINGLE or RRULE (default: SINGLE)
+        rrule: RRULE string for recurring events (required if occurrenceType=RRULE)
+        priority: LOW, MEDIUM, or HIGH (default: MEDIUM)
+        color: Hex color code (default: #3b82f6)
+        goalId: Associated goal ID
+
+    Returns:
+        Dict containing the created event data or error information
+    """
     try:
+        # Apply defaults for None values
+        actual_occurrence = occurrenceType if occurrenceType is not None else OccurrenceType.SINGLE
+        actual_priority = priority if priority is not None else Priority.MEDIUM
+        actual_color = color if color is not None else "#3b82f6"
+
         is_valid, error = validate_event_times(
             startTime.isoformat() if startTime else "",
             endTime.isoformat() if endTime else ""
         )
         if not is_valid:
             return {"error": error, "status": "validation_failed"}
+
+        # Get user ID from context
+        user_id = get_user_id()
+        if not user_id:
+            return {"error": "User ID not available - authentication required", "status": "failed"}
+
         supabase = get_supabase()
         if supabase is None:
             return {"error": "Supabase client unavailable", "status": "failed"}
         data = {
+            "id": generate_cuid(),
+            "userId": user_id,
             "title": title,
             "description": description,
             "startTime": startTime.isoformat(),
             "endTime": endTime.isoformat(),
             "timezone": timezone,
-            "occurrenceType": occurrenceType.value,
+            "occurrenceType": actual_occurrence.value,
             "rrule": rrule,
-            "priority": priority.value,
-            "color": color,
-            "goalId": goalId
+            "priority": actual_priority.value,
+            "color": actual_color,
+            "goalId": goalId,
+            "updatedAt": datetime.utcnow().isoformat()
         }
-        result = supabase.table("tasks").insert(data).execute()
+        result = supabase.table("events").insert(data).execute()
         if result.data:
             return {"event": result.data[0], "status": "created"}
         return {"error": "Failed to create event", "status": "failed"}
@@ -366,7 +430,7 @@ def update_event(
         supabase = get_supabase()
         if supabase is None:
             return {"error": "Supabase client unavailable", "status": "failed"}
-        result = supabase.table("tasks").update(update_data).eq("id", eventId).execute()
+        result = supabase.table("events").update(update_data).eq("id", eventId).execute()
         if result.data:
             return {"event": result.data[0], "status": "updated"}
         return {"error": "Event not found or update failed", "status": "failed"}
@@ -379,7 +443,7 @@ def delete_event(eventId: str) -> dict:
         supabase = get_supabase()
         if supabase is None:
             return {"error": "Supabase client unavailable", "status": "failed"}
-        result = supabase.table("tasks").delete().eq("id", eventId).execute()
+        result = supabase.table("events").delete().eq("id", eventId).execute()
         if result.data:
             return {"event": result.data[0], "status": "deleted"}
         return {"error": "Event not found or deletion failed", "status": "failed"}
@@ -396,11 +460,28 @@ def get_events(
     occurrenceType: Optional[OccurrenceType] = None,
     keywords: Optional[list] = None
 ) -> dict:
+    """Retrieve SCHEDULED events (items with startTime/endTime). Use get_tasks for unscheduled items.
+
+    Args:
+        startTime: Filter events starting on or after this time (UTC)
+        endTime: Filter events ending on or before this time (UTC)
+        status: Filter by status (PENDING, IN_PROGRESS, COMPLETED, CANCELLED)
+        priority: Filter by priority (LOW, MEDIUM, HIGH)
+        goalId: Filter by associated goal ID
+        occurrenceType: Filter by SINGLE or RRULE
+        keywords: Search keywords to match in title/description
+
+    Returns:
+        Dict containing the list of events or error information
+    """
     try:
+        logger.debug("[GET_EVENTS] Starting get_events tool")
         supabase = get_supabase()
         if supabase is None:
+            logger.error("[GET_EVENTS] Supabase client is None!")
             return {"error": "Supabase client unavailable", "status": "failed"}
-        query = supabase.table("tasks").select("*")
+        logger.debug("[GET_EVENTS] Got supabase client, building query...")
+        query = supabase.table("events").select("*")
         if startTime:
             query = query.gte("startTime", startTime.isoformat())
         if endTime:
@@ -423,8 +504,10 @@ def get_events(
                 if any(k.lower() in text for k in keywords):
                     filtered.append(ev)
             events = filtered
+        logger.debug(f"[GET_EVENTS] Found {len(events)} events")
         return {"events": events, "status": "found"}
     except Exception as e:
+        logger.error(f"[GET_EVENTS] Exception: {type(e).__name__}: {e}")
         return {"error": str(e), "status": "failed"}
 
 @tool(args_schema=AssessInfoInput)
@@ -503,42 +586,52 @@ def assess_information(
         "intent": intent,
     }
 
-# Create the base LangChain calendar agent with tools
-_base_calendar_agent = create_agent(
+# System prompt for calendar agent
+CALENDAR_SYSTEM_PROMPT = """You are a helpful calendar assistant. Use the available tools to manage calendar tasks and events.
+
+IMPORTANT: You will receive current time information (UTC and local timezone).
+Use this to interpret relative times like 'tomorrow', 'next week', 'in 2 hours', etc.
+
+WORKFLOW RULES:
+1. Call assess_information FIRST if you need to verify missing information
+2. After getting tool results, ALWAYS interpret and synthesize them before responding
+3. DO NOT retry the same tool with different parameters unless the first call failed
+4. For date queries, use the full day range (00:00:00Z to 23:59:59Z)
+
+When creating events:
+- Convert all times to UTC format: YYYY-MM-DDTHH:MM:SSZ
+- Use the provided current time to calculate relative dates
+
+CRITICAL: When calling assess_information, extract and pass concrete values:
+- For 'today', use the current local date from the time context
+- For 'tomorrow', calculate the next day
+- For 'next Monday', calculate the date based on current day
+- DO NOT pass relative terms like 'today' to assess_information - use actual dates
+
+RESPONSE FORMAT:
+- After tool calls, provide a clear interpretation of results
+- Synthesize multiple events into a readable summary
+- Include relevant details (times, locations, attendees)
+"""
+
+# Calendar tools list
+calendar_tools = [
+    create_task,
+    update_task,
+    delete_task,
+    get_tasks,
+    create_event,
+    update_event,
+    delete_event,
+    get_events,
+    assess_information,
+]
+
+# Create the base LangGraph react agent with tools
+_base_calendar_agent = create_react_agent(
     model=reasoningModel,
-    tools=[
-        create_task,
-        update_task,
-        delete_task,
-        get_tasks,
-        create_event,
-        update_event,
-        delete_event,
-        get_events,
-        assess_information,
-    ],
-    system_prompt=(
-        "You are a helpful calendar assistant. Use the available tools to manage calendar tasks and events.\n\n"
-        "IMPORTANT: You will receive current time information (UTC and local timezone). "
-        "Use this to interpret relative times like 'tomorrow', 'next week', 'in 2 hours', etc.\n\n"
-        "WORKFLOW RULES:\n"
-        "1. Call assess_information FIRST if you need to verify missing information\n"
-        "2. After getting tool results, ALWAYS interpret and synthesize them before responding\n"
-        "3. DO NOT retry the same tool with different parameters unless the first call failed\n"
-        "4. For date queries, use the full day range (00:00:00Z to 23:59:59Z)\n\n"
-        "When creating events:\n"
-        "- Convert all times to UTC format: YYYY-MM-DDTHH:MM:SSZ\n"
-        "- Use the provided current time to calculate relative dates\n\n"
-        "CRITICAL: When calling assess_information, extract and pass concrete values:\n"
-        "- For 'today', use the current local date from the time context\n"
-        "- For 'tomorrow', calculate the next day\n"
-        "- For 'next Monday', calculate the date based on current day\n"
-        "- DO NOT pass relative terms like 'today' to assess_information - use actual dates\n\n"
-        "RESPONSE FORMAT:\n"
-        "- After tool calls, provide a clear interpretation of results\n"
-        "- Synthesize multiple events into a readable summary\n"
-        "- Include relevant details (times, locations, attendees)\n"
-    ),
+    tools=calendar_tools,
+    prompt=CALENDAR_SYSTEM_PROMPT,
 )
 
 class CalendarAgent:
@@ -550,7 +643,7 @@ class CalendarAgent:
     def invoke(self, state: dict, config: dict = None):
         """
         Handle orchestrator state format with task list.
-        
+
         Args:
             state: {
                 "messages": [...],
@@ -565,22 +658,42 @@ class CalendarAgent:
                     ...
                 }
             }
-        
+
         Returns:
             Results from executing all tasks
         """
         from langchain_core.messages import HumanMessage
         from datetime import datetime
         import pytz
-        
-        # Extract Supabase client from config and set in context
+
+        logger.debug("=" * 50)
+        logger.debug("[CALENDAR_AGENT] invoke() called")
+        logger.debug(f"[CALENDAR_AGENT] Config received: {config is not None}")
+
+        # Extract Supabase client and user_id from config and set in context
         supabase_client = None
+        user_id = None
         if config and "configurable" in config:
             supabase_client = config["configurable"].get("supabase")
-        
-        # Set the Supabase client in context for tools to use
-        token = supabase_context.set(supabase_client)
-        
+            user_id = config["configurable"].get("user_id")
+            logger.debug(f"[CALENDAR_AGENT] Supabase client from config: {supabase_client is not None}")
+            logger.debug(f"[CALENDAR_AGENT] User ID from config: {user_id}")
+        else:
+            logger.debug("[CALENDAR_AGENT] No config or configurable - will use default_supabase")
+
+        # Also check state for user_id (fallback)
+        if not user_id:
+            user_id = state.get("user_id")
+            if user_id:
+                logger.debug(f"[CALENDAR_AGENT] User ID from state: {user_id}")
+
+        if supabase_client is None:
+            logger.debug(f"[CALENDAR_AGENT] Falling back to default_supabase: {default_supabase is not None}")
+
+        # Set context variables for tools to use
+        supabase_token = supabase_context.set(supabase_client)
+        user_id_token = user_id_context.set(user_id)
+
         try:
             tasks = state.get("tasks", [])
             context = state.get("context", "")
@@ -636,8 +749,9 @@ Please execute these tasks in the order specified."""
                 "result": result
             }
         finally:
-            # Reset the context variable
-            supabase_context.reset(token)
+            # Reset context variables
+            supabase_context.reset(supabase_token)
+            user_id_context.reset(user_id_token)
 
 # Export the wrapped agent
 calendar_agent = CalendarAgent(_base_calendar_agent)

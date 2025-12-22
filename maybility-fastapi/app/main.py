@@ -4,7 +4,7 @@ FastAPI Application Entry Point
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routes import auth, tasks
+from app.routes import auth, tasks, chat, settings
 
 app = FastAPI(
     title="Maybility API",
@@ -24,6 +24,8 @@ app.add_middleware(
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["authentication"])
 app.include_router(tasks.router, prefix="/api/tasks", tags=["tasks"])
+app.include_router(chat.router, prefix="/api", tags=["chat"])
+app.include_router(settings.router, prefix="/api", tags=["settings"])
 
 
 @app.get("/")

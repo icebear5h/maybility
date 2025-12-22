@@ -32,6 +32,11 @@ from app.schemas.auth import (
     UserCreate,
     UserResponse,
 )
+from app.schemas.chat import (
+    ChatMessage,
+    ChatRequest,
+    ChatResponse,
+)
 
 __all__ = [
     # Enums
@@ -65,4 +70,8 @@ __all__ = [
     "TokenData",
     "UserCreate",
     "UserResponse",
+    # Chat
+    "ChatMessage",
+    "ChatRequest",
+    "ChatResponse",
 ]
